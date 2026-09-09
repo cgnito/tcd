@@ -93,3 +93,36 @@ generate → constrain → generate → constrain → ...
 **the constraint is applied during generation, at every token.**
 
 that's the core idea behind tcd.
+
+## conceptual architecture: might change later
+```
+tcd/
+│
+├── src/
+│   └── tcd/
+│       ├── __init__.py
+│       │
+│       ├── model.py
+│       ├── tokenizer.py
+│       ├── decoder.py
+│       ├── masking.py
+│       ├── sampling.py
+│       │
+│       └── constraints/
+│           ├── __init__.py
+│           ├── choice.py
+│           ├── regex.py
+│           └── json.py
+│
+├── examples/
+│   └── basic.py
+│
+├── tests/
+│
+├── benchmarks/
+│
+├── pyproject.toml
+├── uv.lock
+├── README.md
+└── .gitignore
+```
