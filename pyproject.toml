@@ -1,13 +1,16 @@
 [project]
 name = "tcd"
 version = "0.1.0"
-description = "Add your description here"
+description = "a tiny constrained decode for llms"
 readme = "README.md"
 authors = [
     { name = "Abdulrahmon Adebayo", email = "abdulrahmon11052008@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "torch>=2.14.0",
+    "transformers>=5.17.0",
+]
 
 [project.scripts]
 tcd = "tcd:main"
@@ -15,3 +18,10 @@ tcd = "tcd:main"
 [build-system]
 requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"

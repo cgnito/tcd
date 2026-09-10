@@ -1,43 +1,51 @@
-## hardware & model setup
+## Hardware & Model Setup
 
-My laptop as of building this project:
+My laptop:
 
-* **CPU:** Intel Core i7-8650U — 4 physical cores, 8 threads
+* **CPU:** Intel Core i7-8650U — 4 cores, 8 threads
 * **GPU:** NVIDIA GeForce MX130 — 2 GB VRAM
 * **RAM:** 8 GB
 
-Since the MX130 has only 2 GB of VRAM, I’ll run a tiny model, **`sshleifer/tiny-gpt2`**, on the CPU rather than the GPU.
+### Model
+
+I'm using **GPT-2 (124M parameters)** from `openai-community/gpt2`.
+
+I initially considered `sshleifer/tiny-gpt2`, but it is a heavily reduced model mainly intended for testing and examples. For TCD, I want to work with a real, small autoregressive language model that produces meaningful next-token probabilities.
+
+I don't need a large LLM for this project. GPT-2 is small enough to run locally while still giving me a real model to work with.
+
+### Why CPU?
+
+My MX130 can run GPU workloads, but it is an older NVIDIA GPU and can run into compatibility issues with newer PyTorch/CUDA versions. Since GPT-2 is small and this project is for experimentation, CPU is more than sufficient.
+
+I'm therefore using the **CPU version of PyTorch**, so CUDA is not involved in my inference.
+
+The setup is:
+
+```text
+model: GPT-2
+parameters: 124M
+tokenizer: GPT-2 tokenizer
+framework: PyTorch
+device: CPU
+```
 
 The basic flow is:
 
 ```text
 Hugging Face
     ↓
-download model files → storage
+download model
     ↓
-load model → RAM
+load model into RAM
     ↓
-CPU → inference
+PyTorch runs inference on CPU
+    ↓
+GPT-2 produces logits
+    ↓
+TCD controls token selection
 ```
 
-The model consists of:
+I'm not using `model.generate()`. I want to understand and build the generation process rather than simply calling a high-level generation API.
 
-```text
-MODEL
-├── architecture
-├── weights
-├── tokenizer
-│   ├── vocabulary
-│   └── tokenization rules
-└── configuration
-```
-
-* **Architecture:** Defines the structure and computation of the model.
-* **Weights:** Learned parameters obtained during training.
-* **Tokenizer:** Converts text ↔ tokens.
-
-  * **Vocabulary:** The set of tokens the tokenizer can represent.
-  * **Tokenization rules:** Rules for splitting text into tokens.
-* **Configuration:** Describes the model, such as the number of layers, hidden dimension, attention heads, vocabulary size, and context length.
-
-During inference, the CPU performs the model's computations, such as matrix multiplication, attention, and activation functions.
+Eventually, the constraint will sit between the model's logits and the token selection step, allowing TCD to prevent the model from selecting tokens that would make the output invalid.
