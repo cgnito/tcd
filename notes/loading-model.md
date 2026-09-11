@@ -8,9 +8,9 @@ My laptop:
 
 ### Model
 
-I'm using **GPT-2 (124M parameters)** from `openai-community/gpt2`.
+I'm using `Qwen/Qwen2.5-0.5B-Instruct`.
 
-I initially considered `sshleifer/tiny-gpt2`, but it is a heavily reduced model mainly intended for testing and examples. For TCD, I want to work with a real, small autoregressive language model that produces meaningful next-token probabilities.
+I initially considered `sshleifer/tiny-gpt2`, but it is a heavily reduced model mainly intended for testing and examples, also tried using `openai-community/gpt2` but it is also a heavily reduced model. For TCD, I want to work with a real, small autoregressive language model that produces meaningful next-token probabilities.
 
 I don't need a large LLM for this project. GPT-2 is small enough to run locally while still giving me a real model to work with.
 
