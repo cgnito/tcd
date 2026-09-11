@@ -8,7 +8,7 @@ the goal is not just to build a constrained decoder, but to understand the ideas
 
 ## phase 0 — establish the mental model
 
-**status:**  ▶️started ▶️
+**status:**  ✔️done✔️
 
 ### question
 
@@ -82,11 +82,11 @@ for _ in range(20):
 
 ### done when
 
-* [ ] i can manually generate one token from an llm
-* [ ] i can manually generate multiple tokens in a loop
-* [ ] i understand what logits represent
-* [ ] i understand why generation is autoregressive
-* [ ] i can explain the generation loop without looking it up
+* [x] i can manually generate one token from an llm
+* [x] i can manually generate multiple tokens in a loop
+* [x] i understand what logits represent
+* [x] i understand why generation is autoregressive
+* [x] i can explain the generation loop without looking it up
 
 when you successfully do this, you have crossed the first major threshold.
 
@@ -96,7 +96,7 @@ because now **you control generation.**
 
 # phase 1 — build the unconstrained decoder
 
-**status:** ⬜ not started
+**status:** ▶️started▶️
 
 refactor that ugly generation loop into your own:
 
@@ -116,10 +116,10 @@ decoder.generate(
 
 ### learn
 
-* [ ] greedy decoding
-* [ ] multinomial sampling
-* [ ] temperature
-* [ ] eos tokens
+* [x] greedy decoding
+* [x] multinomial sampling
+* [x] temperature
+* [x] eos tokens
 
 build those yourself.
 
@@ -129,11 +129,11 @@ that's important because later you'll intercept this process.
 
 ### done when
 
-* [ ] i have my own `decoder`
-* [ ] i can generate using greedy decoding
-* [ ] i can generate using sampling
-* [ ] temperature works
-* [ ] generation stops at an eos token
+* [x] i have my own `decoder`
+* [x] i can generate using greedy decoding
+* [x] i can generate using sampling
+* [x] temperature works
+* [x] generation stops at an eos token
 * [ ] i understand where i will eventually apply constraints
 
 ---

@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from tcd!")
+from .decoder import Decoder
+
+__all__ = ["Decoder"]
