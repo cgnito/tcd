@@ -10,8 +10,17 @@ class Decoder:
         self.model.to("cpu")
 
 
-    def generate(self, prompt, max_tokens=50, temperature=0.8):
+    def generate(self, prompt, max_tokens=50, temperature=0.8, allowed_tokens: list[str] | None = None):
+
         response = ""
+        allowed_token_ids = []
+
+        if allowed_tokens is not None:
+            for token in allowed_tokens:
+                token_id = self.tokenizer(token)["input_ids"][0]
+                allowed_token_ids.append(token_id)
+
+            allowed_token_ids.append(self.tokenizer.eos_token_id)
 
         with torch.inference_mode():
             inputs = self.tokenizer(prompt, return_tensors="pt")
@@ -20,10 +29,16 @@ class Decoder:
             for _ in range(max_tokens):
 
                 next_logits = outputs.logits[0, -1]
+                if allowed_token_ids is not None:
+                    mask = torch.full_like(next_logits, float("-inf"))
+                    mask[allowed_token_ids] = 0
+                    next_logits = next_logits + mask
+
                 probs = F.softmax(next_logits / temperature, dim=-1)
                 next_token_id = torch.multinomial(probs, num_samples=1).item()
 
                 next_token = self.tokenizer.decode([next_token_id])
+                print(next_token_id, repr(next_token)) # to see tokens
                 response += next_token
 
                 if next_token_id == self.tokenizer.eos_token_id:

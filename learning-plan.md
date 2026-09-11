@@ -134,7 +134,7 @@ that's important because later you'll intercept this process.
 * [x] i can generate using sampling
 * [x] temperature works
 * [x] generation stops at an eos token
-* [ ] i understand where i will eventually apply constraints
+* [x] i understand where i will eventually apply constraints
 
 ---
 
@@ -191,12 +191,12 @@ and you should be able to explain **why invalid output is impossible**.
 
 ### done when
 
-* [ ] i can define a set of allowed outputs
-* [ ] i can determine which tokens are allowed
-* [ ] i can mask invalid tokens
-* [ ] masked tokens cannot be sampled
-* [ ] `choice(["yes", "no"])` works
-* [ ] i can explain why this is different from validation after generation
+* [x] i can define a set of allowed outputs
+* [x] i can determine which tokens are allowed
+* [x] i can mask invalid tokens
+* [x] masked tokens cannot be sampled
+* [x] `choice(["yes", "no"])` works
+* [x] i can explain why this is different from validation after generation
 
 ---
 
