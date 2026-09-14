@@ -16,9 +16,9 @@ class Decoder:
         allowed_token_ids = []
 
         if allowed_tokens is not None:
-            for token in allowed_tokens:
-                token_id = self.tokenizer(token)["input_ids"][0]
-                allowed_token_ids.append(token_id)
+            for text in allowed_tokens:
+                for token_id in self.tokenizer.encode(text):
+                    allowed_token_ids.append(token_id)
 
             allowed_token_ids.append(self.tokenizer.eos_token_id)
 
@@ -39,7 +39,7 @@ class Decoder:
 
                 next_token = self.tokenizer.decode([next_token_id])
                 print(next_token_id, repr(next_token)) # to see tokens
-                response += next_token
+                response += f"{next_token} "
 
                 if next_token_id == self.tokenizer.eos_token_id:
                     break
@@ -50,4 +50,4 @@ class Decoder:
                     past_key_values=outputs.past_key_values,
                     use_cache=True
                 )
-        return response
+        return response, allowed_token_ids

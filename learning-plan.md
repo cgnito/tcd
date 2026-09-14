@@ -96,7 +96,7 @@ because now **you control generation.**
 
 # phase 1 — build the unconstrained decoder
 
-**status:** ▶️started▶️
+**status:** ✔️done✔️
 
 refactor that ugly generation loop into your own:
 
@@ -140,7 +140,7 @@ that's important because later you'll intercept this process.
 
 # phase 2 — your first constraint
 
-**status:** ⬜ not started
+**status:** ✔️done✔️
 
 now implement:
 
@@ -202,7 +202,7 @@ and you should be able to explain **why invalid output is impossible**.
 
 # phase 3 — understand tokenization properly
 
-**status:** ⬜ not started
+**status:** ✔️done✔️
 
 this phase will probably humble you a little.
 
@@ -229,20 +229,20 @@ and that seemingly simple prefix matching gets complicated.
 
 ### learn
 
-* [ ] bpe / tokenizer basics
-* [ ] vocabulary
-* [ ] token prefixes
-* [ ] special tokens
+* [x] bpe / tokenizer basics
+* [x] vocabulary
+* [x] token prefixes
+* [x] special tokens
 
 then modify your `choice` constraint so it operates correctly at the token level.
 
 ### done when
 
-* [ ] i understand how my chosen tokenizer represents text
-* [ ] i understand why one word can become multiple tokens
-* [ ] i understand why a token can contain a space or partial word
-* [ ] my `choice` constraint works correctly with tokenization
-* [ ] i can explain why character-level matching is not enough
+* [x] i understand how my chosen tokenizer represents text
+* [x] i understand why one word can become multiple tokens
+* [x] i understand why a token can contain a space or partial word
+* [x] my `choice` constraint works correctly with tokenization
+* [x] i can explain why character-level matching is not enough
 
 this phase will give me a much stronger understanding of llm inference than simply calling apis.
 
@@ -250,7 +250,7 @@ this phase will give me a much stronger understanding of llm inference than simp
 
 # phase 4 — state machines
 
-**status:** ⬜ not started
+**status:** ▶️started▶️
 
 now you're ready for theory.
 
