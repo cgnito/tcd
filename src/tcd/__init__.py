@@ -1,3 +1,4 @@
 from .decoder import Decoder
+from .state import DFA
 
-__all__ = ["Decoder"]
+__all__ = ["DFA", "Decoder"]
