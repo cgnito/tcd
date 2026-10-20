@@ -52,6 +52,9 @@ class NFA:
 # Each function below takes an NFA and returns a (start, accept) pair —
 # a "fragment" wired into the NFA. Fragments are composed to match the
 # structure of the regex.
+#
+# The key idea behind Thompson's construction: Every regex piece gives me a little fragment
+# with a start and an accept state. Then i connect those fragments together via epsilon transitions. (_concat)
 
 def _literal(nfa: NFA, char: str) -> tuple[int, int]:
     """a  →  (start) --a--> (accept)"""
@@ -107,6 +110,9 @@ def _star(nfa: NFA, f: tuple[int, int]) -> tuple[int, int]:
 #   atom   = char | '(' expr ')'
 
 class _RegexParser:
+    """
+    Turns a regex pattern into a sequence of construction operations.
+    """
     def __init__(self, pattern: str):
         self.pattern = pattern
         self.pos = 0
@@ -147,6 +153,9 @@ class _RegexParser:
 
 
 class DFA:
+    """
+    A deterministic finite automaton (DFA) that matches a regex pattern.
+    """
     def __init__(self, pattern: str):
         self.pattern = pattern
 
@@ -166,6 +175,9 @@ class DFA:
         # Each DFA state is a frozenset of NFA states (all the states the
         # NFA could simultaneously be in). We name them q0, q1, q2, ...
         # in the order we first encounter them.
+
+        # The key idea of subset construction: the next DFA state represents every NFA state that could be active after
+        # reading the next character and following all possible epsilon transitions.
 
         state_map: dict[frozenset[int], str] = {}
         counter = 0

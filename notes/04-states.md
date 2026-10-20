@@ -127,3 +127,69 @@ DFA moves to the next state
 The main thing I need to figure out now is **how to connect the DFA's symbol-level transitions with the model's token-level generation**.
 
 The model generates tokens, not one character at a time, so I need a way to determine how a generated token moves through the DFA.
+
+
+
+
+we didn't talk about nfa... and the key difference there is non-determinism. a dfa operates with a state takes an input and moves to the next state(which can only be a single state) but an nfa can have multiple next states, a single state or no state for a given input. the rule is that as it takes multiple paths, if any pat gets to the accepting state, it is considered a valid match.
+
+an an nfa also has an epislon transition, it acts has a glue. it lets an nfa move to a state without consuming a character. it acts as a concatnator.
+
+our input is ab, we want a then b.
+
+We can build two tiny machines.
+
+For a:
+
+q0 --a--> q1
+
+For b:
+
+q2 --b--> q3
+
+Now how do we connect them?
+
+We use ε:
+
+q0 --a--> q1 --ε--> q2 --b--> q3
+consume a -> move freely -> consume b
+
+
+
+
+1. State: the current position of the machine
+  
+2. Transition: it tells us where to move next, it does 2 jobs, check if the input is valid and if valid, move to the next state
+       
+3. DFA: deterministic finite automaton: it is a state machine that takes in a symbol checks the transition from there and if symbol is valid moves to the next state and eventually tell us when all input so far are valid/accepted
+       
+4. NFA: works like a dfa but it is non-deterministic; it takes in a symbol and moves to a set of state that are valid, multiple, nono or a single state could be valid for just one input.
+       
+5. ε-transition: this is regarded as an empty input, it helps in concatenation. it helps in nfa to join 2 states
+       
+6. NFA acceptance: when a state in the set of state is an accepting state, (is this correct?)
+      
+7. Regex operators: they define the pattern of the regex
+      
+8. Regex → NFA (Thompson's construction): this is a construction algorithm that converts a regex into an NFA
+       
+9. ε-closure: this is the set of states that can be reached from a given state without consuming any input
+       
+10. NFA move: this is the set of states that can be reached from a given state by consuming a symbol
+       
+11. Subset construction: this is an algorithm that converts an NFA into a DFA, making a set of states in the nfa equal to a single state in the dfa. (making it deterministic)
+       
+how this fits into TCD: the overall state machine in tcd, will be something conceptually like this 
+
+```python
+def consume(token):
+    text = tokenizer.decode([token])
+
+    for character in text:
+        state = dfa.transition(state, character)
+
+    return state
+```
+
+
+so the dfa is like an abstraction in my state machine and my state machine will some how encapsulate the dfa.
