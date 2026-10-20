@@ -231,6 +231,10 @@ class DFA:
         self.current_state = self.transitions[state][symbol]
         return self.current_state
 
+    def valid_symbols(self) -> set[str]:
+        """Return the symbols that have transitions from the current state."""
+        return set(self.transitions.get(self.current_state, {}))
+
     def accepts(self, string: str) -> bool:
         """Run the full string through the DFA and return whether it's accepted."""
         self.current_state = self.start_state
