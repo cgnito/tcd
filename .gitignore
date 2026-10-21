@@ -9,5 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-.ruff_cache/
 AGENTS.md
+.ruff_cache/

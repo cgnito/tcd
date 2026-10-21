@@ -1,195 +1,116 @@
-## State
+## the idea
 
-**State** → the current position according to the rules. It encapsulates the current state of the automaton.
+A state machine keeps track of **where we are** in a rule while reading an
+input one symbol at a time.
 
-## Transition
-
-If **state** tells us where we are, **transition** tells us where to go next when we receive a particular input.
-
-```text
-q0 = initial state
-c  = input
-→  = transition
-```
-
-At the initial state `q0`, when we receive `y`, we transition to `q1` because `y` is valid.
-
-If we receive `x`, since `x` is invalid at `q0`, there is no valid state to transition to.
-
-A transition does two things:
-
-* checks if the input is valid from the current state
-* if valid, moves the machine to the appropriate next state
+For the pattern `cat`, the machine can look like this:
 
 ```text
-q0        q1        q2        ((q3))
- │         │         │         │
- │ c       │ a       │ t       │
- ↓         ↓         ↓         ↓
-"c"      "ca"      "cat"    accepted
+q0 --c--> q1 --a--> q2 --t--> q3
+                              accepting
 ```
 
-## Bringing this into TCD
+`q0` is the start state. Each arrow is a transition. A transition checks
+whether the next symbol is valid and, if it is, moves the machine forward.
+If there is no matching arrow, the input cannot satisfy the rule.
 
-Conceptually:
+An accepting state means that the input read so far is a complete valid match.
+The machine may still have other transitions from that state if the pattern
+allows a longer match.
+
+## NFA and DFA
+
+The implementation first builds an NFA, or **nondeterministic finite
+automaton**, from the regex. An NFA can have multiple possible states after
+reading a symbol. It can also use an epsilon transition, written `ε`, which
+moves to another state without consuming input.
+
+For example, concatenating `a` and `b` can use epsilon as glue:
 
 ```text
-current state
-      ↓
-look at possible next tokens
-      ↓
-which tokens have valid transitions?
-      ↓
-allow those tokens
-      ↓
-generate one token
-      ↓
-follow its transition
-      ↓
-move to the next state
-      ↓
-repeat
-```
-
-The important part is that **the model is still generating tokens**.
-
-The state machine is used to determine which tokens are valid to generate at the current state.
-
-## Start State
-
-The **start state** is the state from which the automaton begins processing.
-
-## Accepting State
-
-The **accepting state** is a state where the automaton can stop processing and accept the input.
-
-The input accepted so far is a valid complete match.
-
-## DFA
-
-**DFA** → Deterministic Finite Automaton.
-
-It brings the concepts above together.
-
-It is a finite state machine that processes input one symbol at a time and moves between states according to its transitions.
-
-Simply:
-
-> a machine that takes an input symbol, checks the transition from the current state, moves to the next state, and eventually tells us if the input is accepted.
-
-## DFA in TCD
-
-This is where I think the DFA comes into TCD.
-
-Conceptually, when I have a constraint, I need some way to describe that constraint to the automaton.
-For example, if my constraint is:
-
-```text
-yes or no
-```
-
-I can describe the pattern with:
-
-```text
-yes|no
-```
-
-The automaton can then conceptually look like:
-
-```text
-                  y ──> q1 ──e──> q2 ──s──> ((q3))
-                 /
-start → q0
-                 \
-                  n ──> q4 ──o──> ((q5))
-```
-
-At `q0`, the valid next inputs are `y` and `n`.
-
-So conceptually, TCD needs to determine:
-
-```text
-current DFA state
-        ↓
-valid next symbols/tokens
-        ↓
-convert them into allowed token IDs
-        ↓
-mask the model's logits
-        ↓
-model generates one token
-        ↓
-send the generated token back
-        ↓
-DFA moves to the next state
-```
-
-The main thing I need to figure out now is **how to connect the DFA's symbol-level transitions with the model's token-level generation**.
-
-The model generates tokens, not one character at a time, so I need a way to determine how a generated token moves through the DFA.
-
-
-
-
-we didn't talk about nfa... and the key difference there is non-determinism. a dfa operates with a state takes an input and moves to the next state(which can only be a single state) but an nfa can have multiple next states, a single state or no state for a given input. the rule is that as it takes multiple paths, if any pat gets to the accepting state, it is considered a valid match.
-
-an an nfa also has an epislon transition, it acts has a glue. it lets an nfa move to a state without consuming a character. it acts as a concatnator.
-
-our input is ab, we want a then b.
-
-We can build two tiny machines.
-
-For a:
-
-q0 --a--> q1
-
-For b:
-
-q2 --b--> q3
-
-Now how do we connect them?
-
-We use ε:
-
 q0 --a--> q1 --ε--> q2 --b--> q3
-consume a -> move freely -> consume b
+```
 
+The NFA is useful for building regex pieces. The decoder needs a simpler
+machine, so the code converts the NFA into a DFA, or **deterministic finite
+automaton**. A DFA has exactly one next state for a given state and symbol.
 
+The conversion is called subset construction. Each DFA state represents a set
+of NFA states that could currently be active. The code follows epsilon
+transitions with `epsilon_closure()`, follows real symbols with `move()`, and
+uses those sets to create named states such as `q0`, `q1`, and `q2`.
 
+## how `state.py` builds the machine
 
-1. State: the current position of the machine
-  
-2. Transition: it tells us where to move next, it does 2 jobs, check if the input is valid and if valid, move to the next state
-       
-3. DFA: deterministic finite automaton: it is a state machine that takes in a symbol checks the transition from there and if symbol is valid moves to the next state and eventually tell us when all input so far are valid/accepted
-       
-4. NFA: works like a dfa but it is non-deterministic; it takes in a symbol and moves to a set of state that are valid, multiple, nono or a single state could be valid for just one input.
-       
-5. ε-transition: this is regarded as an empty input, it helps in concatenation. it helps in nfa to join 2 states
-       
-6. NFA acceptance: when a state in the set of state is an accepting state, (is this correct?)
-      
-7. Regex operators: they define the pattern of the regex
-      
-8. Regex → NFA (Thompson's construction): this is a construction algorithm that converts a regex into an NFA
-       
-9. ε-closure: this is the set of states that can be reached from a given state without consuming any input
-       
-10. NFA move: this is the set of states that can be reached from a given state by consuming a symbol
-       
-11. Subset construction: this is an algorithm that converts an NFA into a DFA, making a set of states in the nfa equal to a single state in the dfa. (making it deterministic)
-       
-how this fits into TCD: the overall state machine in tcd, will be something conceptually like this 
+`_RegexParser` reads the pattern recursively. It supports literals,
+concatenation, alternation with `|`, grouping with parentheses, and repetition
+with `*`.
+
+Each parser operation adds a small NFA fragment:
+
+```text
+literal:      a       -> start --a--> accept
+alternation:  a|b     -> branch to either fragment
+concatenation: ab     -> connect fragments with ε
+repetition:   a*      -> add a loop and an empty path
+```
+
+`DFA.__init__()` then performs subset construction. It starts with the epsilon
+closure of the NFA start state and explores every reachable set of NFA states.
+For each set and each real symbol, it creates one DFA transition.
+
+It stores:
 
 ```python
-def consume(token):
-    text = tokenizer.decode([token])
-
-    for character in text:
-        state = dfa.transition(state, character)
-
-    return state
+self.start_state       # where matching begins
+self.current_state     # where matching currently is
+self.transitions        # state -> symbol -> next state
+self.accepting_states   # states where the input is complete
 ```
 
+## reading input with the DFA
 
-so the dfa is like an abstraction in my state machine and my state machine will some how encapsulate the dfa.
+`DFA.transition(state, symbol)` checks the transition table. If the symbol is
+valid, it updates `current_state` and returns the next state. If it is invalid,
+it raises `ValueError`.
+
+`DFA.valid_symbols()` returns the symbols that have outgoing transitions from
+the current state. This is what the constraint layer uses to find possible next
+characters.
+
+`DFA.accepts(string)` resets the machine to the start state, consumes the
+whole string, and returns `True` only if the final state is accepting.
+
+## how this connects to tcd
+
+The DFA reads characters, but the language model generates token IDs. The
+constraint layer decodes each candidate token and tests all of its characters:
+
+```text
+token ID -> decoded text -> DFA transitions
+```
+
+For `yes|no`, the DFA starts with valid symbols `y` and `n`. A token decoding
+to `yes` is valid only if all three transitions succeed:
+
+```text
+q0 --y--> q1 --e--> q2 --s--> q3
+                              accepting
+```
+
+After the decoder selects a token, the constraint commits its decoded text to
+the DFA. When the DFA reaches an accepting state, generation can stop.
+
+This gives the overall flow:
+
+```text
+regex pattern
+    -> NFA
+    -> DFA
+    -> valid next symbols
+    -> valid token IDs
+    -> logit mask
+    -> sampled token
+    -> DFA state update
+    -> accept or continue
+```
