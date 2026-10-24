@@ -1,4 +1,4 @@
-from tcd import Decoder #will be back
+from tcd import Decoder
 
 decoder = Decoder()
 prompt = input("Enter a prompt: ")

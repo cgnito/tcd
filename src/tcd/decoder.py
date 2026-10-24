@@ -6,6 +6,8 @@ from .state import DFA
 
 
 class Decoder:
+    """Generate text while masking tokens that violate a regex constraint."""
+
     def __init__(self, model_name="Qwen/Qwen2.5-0.5B-Instruct"):
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
@@ -19,6 +21,30 @@ class Decoder:
         max_tokens=50,
         temperature=0.8,
     ):
+        """Generate text that matches ``constraint``.
+
+        Parameters
+        ----------
+        prompt
+            Input text provided to the language model.
+        constraint
+            Supported regex pattern used to restrict generated text.
+        max_tokens
+            Maximum number of new tokens to generate.
+        temperature
+            Sampling temperature applied to the masked logits.
+
+        Returns
+        -------
+        str
+            Generated text, stopping when the constraint is complete or the
+            token limit is reached.
+
+        Examples
+        --------
+        >>> decoder.generate("Is Python a programming language?", "yes|no")
+        'yes'
+        """
 
         response = ""
         dfa = DFA(constraint)
@@ -42,7 +68,7 @@ class Decoder:
                 next_token_id = torch.multinomial(probs, num_samples=1).item()
 
                 next_token = self.tokenizer.decode([next_token_id])
-                print(next_token_id, repr(next_token)) # to see tokens
+                print(next_token_id, repr(next_token))
                 response += next_token
 
                 constraint.consume_token(next_token_id)

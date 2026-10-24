@@ -250,18 +250,18 @@ this phase will give me a much stronger understanding of llm inference than simp
 
 # phase 4 — state machines
 
-**status:** ▶️started▶️
+**status:** ✔️done✔️
 
 now you're ready for theory.
 
 ### learn
 
-* [ ] state
-* [ ] transition
-* [ ] start state
-* [ ] accepting state
-* [ ] deterministic finite automaton
-* [ ] regex → automaton conceptually
+* [x] state
+* [x] transition
+* [x] start state
+* [x] accepting state
+* [x] deterministic finite automaton
+* [x] regex → automaton conceptually
 
 you can represent:
 
@@ -299,19 +299,19 @@ support a tiny subset.
 
 ### done when
 
-* [ ] i understand what a state is
-* [ ] i understand what a transition is
-* [ ] i understand accepting states
-* [ ] i understand the basic idea of a dfa
-* [ ] i can represent a simple regex as a state machine
-* [ ] my decoder can use a state machine as a constraint
-* [ ] `regexconstraint(...)` works for a small regex subset
+* [x] i understand what a state is
+* [x] i understand what a transition is
+* [x] i understand accepting states
+* [x] i understand the basic idea of a dfa
+* [x] i can represent a simple regex as a state machine
+* [x] my decoder can use a state machine as a constraint
+* [x] `regexconstraint(...)` works for a small regex subset
 
 ---
 
 # phase 5 — constrained token indexing
 
-**status:** ⬜ not started
+**status:** ✔️done✔️
 
 this is where things start becoming legitimately interesting.
 
@@ -364,10 +364,10 @@ that's much better understanding.
 
 ### build
 
-* [ ] implement a naive token/state lookup
-* [ ] measure its performance
-* [ ] identify the expensive part
-* [ ] precompute valid token ids for states
+* [x] implement a naive token/state lookup
+* [x] measure its performance
+* [x] identify the expensive part
+* [x] precompute valid token ids for states
 * [ ] compare the optimized version with the naive version
 
 ### done when

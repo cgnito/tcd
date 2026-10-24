@@ -1,8 +1,21 @@
+"""Map tokenizer vocabulary entries onto valid DFA transitions."""
+
+
 from .state import DFA
 
 
 class DFAConstraint:
-    """Find tokenizer tokens whose decoded text can advance a DFA."""
+    """Constrain token generation using a DFA and tokenizer vocabulary.
+
+    Candidate tokens are checked without changing the DFA. The DFA advances
+    only when ``consume_token`` commits a token selected by the decoder.
+
+    Examples
+    --------
+    >>> constraint = DFAConstraint(DFA("yes|no"), tokenizer)
+    >>> constraint.valid_token_ids()
+    [ ... ]
+    """
 
     def __init__(self, dfa: DFA, tokenizer):
         self.dfa = dfa
@@ -12,7 +25,13 @@ class DFAConstraint:
         self._index_vocabulary()
 
     def valid_token_ids(self) -> list[int]:
-        """Return token IDs that consume valid text from the current DFA state."""
+        """Return token IDs whose full text is valid from the current state.
+
+        Returns
+        -------
+        list[int]
+            Sorted vocabulary IDs that can be consumed completely.
+        """
         valid_symbols = self.dfa.valid_symbols()
         valid_token_ids = []
 
@@ -24,13 +43,19 @@ class DFAConstraint:
         return sorted(valid_token_ids)
 
     def consume_token(self, token_id: int) -> None:
-        """Commit a generated token by consuming its decoded characters."""
+        """Advance the DFA through a generated token's decoded text.
+
+        Parameters
+        ----------
+        token_id
+            Vocabulary ID selected by the decoder.
+        """
         text = self._token_text_by_id[token_id]
         for symbol in text:
             self.dfa.transition(self.dfa.current_state, symbol)
 
     def is_complete(self) -> bool:
-        """Return whether the DFA is currently in an accepting state."""
+        """Return whether the DFA currently accepts the generated text."""
         return self.dfa.current_state in self.dfa.accepting_states
 
     def _can_consume(self, text: str) -> bool:

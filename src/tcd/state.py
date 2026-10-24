@@ -1,14 +1,11 @@
-EPSILON = ""  # epsilon: move to another state without consuming input
+"""Build deterministic finite automata from a small regular-expression subset."""
+
+
+EPSILON = ""
 
 
 class NFA:
-    """
-    Nondeterministic Finite Automaton.
-
-    States are plain integers (0, 1, 2, ...) assigned by a counter.
-    Transitions map (state, symbol) -> set of next states.
-    EPSILON transitions are stored under the key "" (empty string).
-    """
+    """Represent a nondeterministic finite automaton during regex construction."""
 
     def __init__(self):
         self._counter: int = 0
@@ -16,6 +13,7 @@ class NFA:
         self.transitions: dict[int, dict[str, set[int]]] = {}
 
     def new_state(self) -> int:
+        """Create and return a new integer state ID."""
         state = self._counter
         self._counter += 1
         self.states.add(state)
@@ -23,12 +21,31 @@ class NFA:
         return state
 
     def add_transition(self, src: int, symbol: str, dst: int) -> None:
+        """Add a transition from ``src`` to ``dst`` for ``symbol``.
+
+        Parameters
+        ----------
+        src
+            Source state ID.
+        symbol
+            Consumed symbol, or ``EPSILON`` for an unconsumed transition.
+        dst
+            Destination state ID.
+        """
         self.transitions[src].setdefault(symbol, set()).add(dst)
 
     def epsilon_closure(self, states: set[int]) -> frozenset[int]:
-        """
-        All NFA states reachable from `states` via epsilon transitions alone.
-        Uses a stack to follow every epsilon arrow until no new states appear.
+        """Return states reachable without consuming a symbol.
+
+        Parameters
+        ----------
+        states
+            NFA states from which to follow epsilon transitions.
+
+        Returns
+        -------
+        frozenset[int]
+            All reachable states, including the input states.
         """
         closure = set(states)
         stack = list(states)
@@ -41,7 +58,20 @@ class NFA:
         return frozenset(closure)
 
     def move(self, states: frozenset[int], symbol: str) -> set[int]:
-        """All NFA states reachable from `states` by consuming `symbol`."""
+        """Return NFA states reachable after consuming ``symbol``.
+
+        Parameters
+        ----------
+        states
+            Current NFA states.
+        symbol
+            Symbol to consume.
+
+        Returns
+        -------
+        set[int]
+            States reached by the symbol before taking epsilon closures.
+        """
         result = set()
         for s in states:
             result |= self.transitions[s].get(symbol, set())
@@ -49,15 +79,8 @@ class NFA:
 
 
 # --- Thompson's construction ---
-# Each function below takes an NFA and returns a (start, accept) pair —
-# a "fragment" wired into the NFA. Fragments are composed to match the
-# structure of the regex.
-#
-# The key idea behind Thompson's construction: Every regex piece gives me a little fragment
-# with a start and an accept state. Then i connect those fragments together via epsilon transitions. (_concat)
-
 def _literal(nfa: NFA, char: str) -> tuple[int, int]:
-    """a  →  (start) --a--> (accept)"""
+    """Build an NFA fragment for one literal character."""
     start = nfa.new_state()
     accept = nfa.new_state()
     nfa.add_transition(start, char, accept)
@@ -65,19 +88,13 @@ def _literal(nfa: NFA, char: str) -> tuple[int, int]:
 
 
 def _concat(nfa: NFA, f1: tuple[int, int], f2: tuple[int, int]) -> tuple[int, int]:
-    """
-    ab  →  connect accept of f1 to start of f2 via epsilon.
-    The overall fragment runs from f1's start to f2's accept.
-    """
+    """Join two fragments in sequence with an epsilon transition."""
     nfa.add_transition(f1[1], EPSILON, f2[0])
     return f1[0], f2[1]
 
 
 def _alternation(nfa: NFA, f1: tuple[int, int], f2: tuple[int, int]) -> tuple[int, int]:
-    """
-    a|b  →  new start branches (via epsilon) into both fragments,
-            both fragments merge (via epsilon) into a new accept.
-    """
+    """Build a fragment that accepts either of two alternatives."""
     start = nfa.new_state()
     accept = nfa.new_state()
     nfa.add_transition(start, EPSILON, f1[0])
@@ -88,17 +105,13 @@ def _alternation(nfa: NFA, f1: tuple[int, int], f2: tuple[int, int]) -> tuple[in
 
 
 def _star(nfa: NFA, f: tuple[int, int]) -> tuple[int, int]:
-    """
-    a*  →  new start can skip directly to accept (zero times),
-           or enter the fragment. After the fragment, loop back
-           or exit to accept.
-    """
+    """Build a fragment that accepts zero or more repetitions."""
     start = nfa.new_state()
     accept = nfa.new_state()
-    nfa.add_transition(start, EPSILON, f[0])   # enter the fragment
-    nfa.add_transition(start, EPSILON, accept)  # skip (zero repetitions)
-    nfa.add_transition(f[1], EPSILON, f[0])    # loop back
-    nfa.add_transition(f[1], EPSILON, accept)  # exit after one+ repetitions
+    nfa.add_transition(start, EPSILON, f[0])
+    nfa.add_transition(start, EPSILON, accept)
+    nfa.add_transition(f[1], EPSILON, f[0])
+    nfa.add_transition(f[1], EPSILON, accept)
     return start, accept
 
 
@@ -110,9 +123,7 @@ def _star(nfa: NFA, f: tuple[int, int]) -> tuple[int, int]:
 #   atom   = char | '(' expr ')'
 
 class _RegexParser:
-    """
-    Turns a regex pattern into a sequence of construction operations.
-    """
+    """Parse the supported regex subset into an NFA."""
     def __init__(self, pattern: str):
         self.pattern = pattern
         self.pos = 0
@@ -143,9 +154,9 @@ class _RegexParser:
 
     def _atom(self) -> tuple[int, int]:
         if self.pattern[self.pos] == "(":
-            self.pos += 1        # consume '('
+            self.pos += 1
             frag = self._expr()
-            self.pos += 1        # consume ')'
+            self.pos += 1
             return frag
         char = self.pattern[self.pos]
         self.pos += 1
@@ -153,31 +164,19 @@ class _RegexParser:
 
 
 class DFA:
-    """
-    A deterministic finite automaton (DFA) that matches a regex pattern.
-    """
+    """Match strings against the supported regular-expression subset."""
     def __init__(self, pattern: str):
         self.pattern = pattern
 
-        # Step 1: parse the regex and build an NFA via Thompson's construction
         parser = _RegexParser(pattern)
         nfa, (nfa_start, nfa_accept) = parser.parse()
 
-        # Collect every real symbol (everything that isn't epsilon)
         alphabet: set[str] = {
             sym
             for trans in nfa.transitions.values()
             for sym in trans
             if sym != EPSILON
         }
-
-        # Step 2: subset construction — turn the NFA into a DFA.
-        # Each DFA state is a frozenset of NFA states (all the states the
-        # NFA could simultaneously be in). We name them q0, q1, q2, ...
-        # in the order we first encounter them.
-
-        # The key idea of subset construction: the next DFA state represents every NFA state that could be active after
-        # reading the next character and following all possible epsilon transitions.
 
         state_map: dict[frozenset[int], str] = {}
         counter = 0
@@ -189,7 +188,6 @@ class DFA:
                 counter += 1
             return state_map[nfa_states]
 
-        # The DFA starts at the epsilon-closure of the NFA's start state
         start_closure = nfa.epsilon_closure({nfa_start})
 
         self.states: set[str] = set()
@@ -198,7 +196,6 @@ class DFA:
         self.accepting_states: set[str] = set()
         self.current_state: str = self.start_state
 
-        # BFS over reachable DFA states
         worklist = [start_closure]
         visited: set[frozenset[int]] = {start_closure}
 
@@ -209,14 +206,12 @@ class DFA:
             self.states.add(current_dfa)
             self.transitions[current_dfa] = {}
 
-            # If any NFA accept state is in this DFA state, it's accepting
             if nfa_accept in current_nfa:
                 self.accepting_states.add(current_dfa)
 
             for symbol in alphabet:
-                # Where do all these NFA states go on this symbol?
                 next_nfa = nfa.epsilon_closure(nfa.move(current_nfa, symbol))
-                if next_nfa:  # empty set means no transition (dead state)
+                if next_nfa:
                     next_dfa = get_name(next_nfa)
                     self.transitions[current_dfa][symbol] = next_dfa
                     if next_nfa not in visited:
@@ -224,6 +219,25 @@ class DFA:
                         worklist.append(next_nfa)
 
     def transition(self, state: str, symbol: str) -> str:
+        """Consume a symbol and return the resulting DFA state.
+
+        Parameters
+        ----------
+        state
+            State from which to transition.
+        symbol
+            Symbol to consume.
+
+        Returns
+        -------
+        str
+            Destination state.
+
+        Raises
+        ------
+        ValueError
+            If ``state`` is unknown or no transition accepts ``symbol``.
+        """
         if state not in self.states:
             raise ValueError(f"State {state} is not in the DFA's state set")
         if symbol not in self.transitions.get(state, {}):
@@ -232,11 +246,28 @@ class DFA:
         return self.current_state
 
     def valid_symbols(self) -> set[str]:
-        """Return the symbols that have transitions from the current state."""
+        """Return symbols accepted from the current state.
+
+        Returns
+        -------
+        set[str]
+            Symbols with outgoing transitions from ``current_state``.
+        """
         return set(self.transitions.get(self.current_state, {}))
 
     def accepts(self, string: str) -> bool:
-        """Run the full string through the DFA and return whether it's accepted."""
+        """Return whether ``string`` ends in an accepting DFA state.
+
+        Parameters
+        ----------
+        string
+            Text to consume from the start state.
+
+        Returns
+        -------
+        bool
+            ``True`` when the complete string matches the pattern.
+        """
         self.current_state = self.start_state
         try:
             for char in string:
