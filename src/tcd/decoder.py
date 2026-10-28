@@ -54,7 +54,7 @@ class Decoder:
             inputs = self.tokenizer(prompt, return_tensors="pt")
             outputs = self.model(**inputs, use_cache=True)
 
-            for _ in range(max_tokens):
+            for step in range(max_tokens):
 
                 next_logits = outputs.logits[0, -1]
                 allowed_token_ids = constraint.valid_token_ids()
@@ -72,7 +72,7 @@ class Decoder:
                 response += next_token
 
                 constraint.consume_token(next_token_id)
-                if constraint.is_complete():
+                if constraint.is_complete() or step == max_tokens - 1:
                     break
 
                 next_input = torch.tensor([[next_token_id]])
