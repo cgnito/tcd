@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from tcd import Decoder
+from tcd import Decoder, RegexConstraint
 
 
 class FakeTokenizer:
@@ -53,6 +53,28 @@ def test_decoder_masks_and_stops_on_a_complete_constraint(monkeypatch):
 
     assert response == "yes"
     assert model.calls == 1
+
+
+def test_decoder_accepts_a_constraint_object(monkeypatch):
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint=RegexConstraint("yes|no"),
+        max_tokens=5,
+        temperature=1.0,
+    )
+
+    assert response == "yes"
 
 
 def test_decoder_raises_when_no_token_can_continue_constraint(monkeypatch):

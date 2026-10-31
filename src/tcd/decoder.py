@@ -1,8 +1,7 @@
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from .constraints import DFAConstraint
-from .state import DFA
+from .constraints import Constraint, RegexConstraint
 
 
 class Decoder:
@@ -17,7 +16,7 @@ class Decoder:
     def generate(
         self,
         prompt,
-        constraint: str,
+        constraint: str | Constraint,
         max_tokens=50,
         temperature=0.8,
     ):
@@ -27,8 +26,9 @@ class Decoder:
         ----------
         prompt
             Input text provided to the language model.
-        constraint
-            Supported regex pattern used to restrict generated text.
+            constraint
+                Regex pattern or constraint object used to restrict generated
+                text.
         max_tokens
             Maximum number of new tokens to generate.
         temperature
@@ -47,8 +47,9 @@ class Decoder:
         """
 
         response = ""
-        dfa = DFA(constraint)
-        constraint = DFAConstraint(dfa, self.tokenizer)
+        if isinstance(constraint, str):
+            constraint = RegexConstraint(constraint)
+        constraint.bind(self.tokenizer)
 
         with torch.inference_mode():
             inputs = self.tokenizer(prompt, return_tensors="pt")

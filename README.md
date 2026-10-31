@@ -49,22 +49,32 @@ Run the test suite without loading the real language model:
 
 ## Usage
 
-The public entry point is `Decoder.generate()`. Pass a regex pattern as the
-`constraint` argument:
+The public entry point is `Decoder.generate()`. Pass a `RegexConstraint` as
+the `constraint` argument:
 
 ```python
-from tcd import Decoder
+from tcd import Decoder, RegexConstraint
 
 decoder = Decoder()
 
 response = decoder.generate(
     prompt="Is Python a programming language?",
-    constraint="yes|no",
+   constraint=RegexConstraint("yes|no"),
     max_tokens=10,
     temperature=0.8,
 )
 
 print(response)
+```
+
+For compatibility, a pattern string is also accepted and is converted to a
+`RegexConstraint` internally:
+
+```python
+response = decoder.generate(
+   prompt="Is Python a programming language?",
+   constraint="yes|no",
+)
 ```
 
 During generation, TCD:

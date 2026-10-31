@@ -1,7 +1,29 @@
 """Map tokenizer vocabulary entries onto valid DFA transitions."""
 
 
+from typing import Protocol
+
 from .state import DFA
+
+
+class Constraint(Protocol):
+    """Define the state operations required by the decoder."""
+
+    def bind(self, tokenizer) -> None:
+        """Attach the tokenizer used to map text continuations to token IDs."""
+        ...
+
+    def valid_token_ids(self) -> list[int]:
+        """Return token IDs that can continue the current constraint state."""
+        ...
+
+    def consume_token(self, token_id: int) -> None:
+        """Commit a selected token to the constraint state."""
+        ...
+
+    def is_complete(self) -> bool:
+        """Return whether the generated text is complete and valid."""
+        ...
 
 
 class DFAConstraint:
@@ -79,3 +101,49 @@ class DFAConstraint:
 
             self._token_text_by_id[token_id] = text
             self._tokens_by_first_symbol.setdefault(text[0], []).append((token_id, text))
+
+
+class RegexConstraint:
+    """Bridge a regex DFA to the decoder's token-level constraint protocol.
+
+    The pattern is compiled when the constraint is created. The tokenizer is
+    attached separately because it belongs to the decoder, not the regex.
+    """
+
+    def __init__(self, pattern: str):
+        self.pattern = pattern
+        self.dfa = DFA(pattern)
+        self._constraint: DFAConstraint | None = None
+
+    def bind(self, tokenizer) -> None:
+        """Attach a tokenizer for vocabulary lookup.
+
+        Parameters
+        ----------
+        tokenizer
+            Tokenizer whose vocabulary will be checked against the DFA.
+        """
+        self._constraint = DFAConstraint(self.dfa, tokenizer)
+
+    def valid_token_ids(self) -> list[int]:
+        """Return token IDs that can continue the regex match."""
+        return self._require_bound().valid_token_ids()
+
+    def consume_token(self, token_id: int) -> None:
+        """Commit a generated token to the regex DFA.
+
+        Parameters
+        ----------
+        token_id
+            Vocabulary ID selected by the decoder.
+        """
+        self._require_bound().consume_token(token_id)
+
+    def is_complete(self) -> bool:
+        """Return whether the regex DFA is in an accepting state."""
+        return self._require_bound().is_complete()
+
+    def _require_bound(self) -> DFAConstraint:
+        if self._constraint is None:
+            raise RuntimeError("RegexConstraint must be bound to a tokenizer")
+        return self._constraint

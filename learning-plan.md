@@ -368,21 +368,21 @@ that's much better understanding.
 * [x] measure its performance
 * [x] identify the expensive part
 * [x] precompute valid token ids for states
-* [ ] compare the optimized version with the naive version
+* [x] compare the optimized version with the naive version
 
 ### done when
 
-* [ ] i understand why checking every vocabulary token is expensive
-* [ ] i understand what a token index represents
-* [ ] i can precompute valid token ids for a state
-* [ ] i can measure the performance difference
-* [ ] i understand why a lower-level implementation can matter here
+* [x] i understand why checking every vocabulary token is expensive
+* [x] i understand what a token index represents
+* [x] i can precompute valid token ids for a state
+* [x] i can measure the performance difference
+* [x] i understand why a lower-level implementation can matter here
 
 ---
 
 # phase 6 — json grammar
 
-**status:** ⬜ not started
+**status:** started
 
 only now.
 
