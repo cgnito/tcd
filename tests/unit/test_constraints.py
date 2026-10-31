@@ -1,4 +1,4 @@
-from tcd import DFA, DFAConstraint
+from tcd import RegexConstraint
 
 
 class FakeTokenizer:
@@ -16,29 +16,24 @@ class FakeTokenizer:
 
 def test_constraint_returns_tokens_that_fully_advance_dfa():
     tokenizer = FakeTokenizer({0: "y", 1: "n", 2: "yes", 3: "no", 4: "yea"})
-    constraint = DFAConstraint(DFA("yes|no"), tokenizer)
+    constraint = RegexConstraint("yes|no")
+    constraint.bind(tokenizer)
 
     assert constraint.valid_token_ids() == [0, 1, 2, 3]
 
 
 def test_candidate_lookup_does_not_change_dfa_state():
-    dfa = DFA("yes|no")
-    constraint = DFAConstraint(
-        dfa,
-        FakeTokenizer({0: "y", 1: "n", 2: "yes", 3: "no"}),
-    )
+    constraint = RegexConstraint("yes|no")
+    constraint.bind(FakeTokenizer({0: "y", 1: "n", 2: "yes", 3: "no"}))
 
     constraint.valid_token_ids()
 
-    assert dfa.current_state == dfa.start_state
+    assert constraint.dfa.current_state == constraint.dfa.start_state
 
 
 def test_consuming_tokens_advances_and_completes_constraint():
-    dfa = DFA("yes|no")
-    constraint = DFAConstraint(
-        dfa,
-        FakeTokenizer({0: "y", 1: "e", 2: "s", 3: "n", 4: "o"}),
-    )
+    constraint = RegexConstraint("yes|no")
+    constraint.bind(FakeTokenizer({0: "y", 1: "e", 2: "s", 3: "n", 4: "o"}))
 
     constraint.consume_token(0)
     assert not constraint.is_complete()
@@ -52,7 +47,8 @@ def test_consuming_tokens_advances_and_completes_constraint():
 
 def test_constraint_decodes_vocabulary_once_and_reuses_cached_text():
     tokenizer = FakeTokenizer({0: "a", 1: "ab", 2: "b"})
-    constraint = DFAConstraint(DFA("ab"), tokenizer)
+    constraint = RegexConstraint("ab")
+    constraint.bind(tokenizer)
 
     assert tokenizer.decode_calls == 3
     constraint.valid_token_ids()
