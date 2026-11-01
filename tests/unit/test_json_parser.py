@@ -85,3 +85,57 @@ def test_candidate_validation_does_not_mutate_parser_state():
     state.consume("e")
 
     assert state.is_complete()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "{}",
+        "[]",
+        '{"name": "Ada", "age": 36}',
+        "[1, true, null, \"text\"]",
+        '{"user": {"active": true}, "items": [1, 2]}',
+    ],
+)
+def test_parser_accepts_structural_json(value):
+    state = JsonParserState()
+
+    state.consume(value)
+
+    assert state.is_complete()
+
+
+def test_parser_accepts_whitespace_between_json_tokens():
+    state = JsonParserState()
+
+    state.consume(' { "name" : "Ada" } ')
+
+    assert state.is_complete()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"name" "Ada"}',
+        '{"name": "Ada" "age": 36}',
+        '{"name": "Ada",}',
+        "[1 2]",
+        "[1,]",
+        '{"name": "Ada"]',
+        "{]",
+    ],
+)
+def test_parser_rejects_malformed_structure(value):
+    state = JsonParserState()
+
+    with pytest.raises(ValueError):
+        state.consume(value)
+
+
+@pytest.mark.parametrize("prefix", ["{", '{"name":', "[", '[{"id": 1},'])
+def test_parser_keeps_structural_prefixes_incomplete(prefix):
+    state = JsonParserState()
+
+    state.consume(prefix)
+
+    assert not state.is_complete()
