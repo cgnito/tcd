@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from tcd import Decoder, RegexConstraint
+from tcd import Decoder, JSONSchemaConstraint, RegexConstraint
 
 
 class FakeTokenizer:
@@ -33,6 +33,52 @@ class FakeModel:
         logits = torch.full((1, 1, 100), -100.0)
         logits[0, 0, self.preferred_token_id] = 100.0
         return SimpleNamespace(logits=logits, past_key_values=None)
+
+
+class JSONTokenizer:
+    def __init__(self):
+        self.token_texts = {
+            0: "{",
+            1: "[",
+            2: '"name"',
+            3: '"unknown"',
+            4: ":",
+            5: "}",
+        }
+
+    def __call__(self, prompt, return_tensors):
+        return {"input_ids": torch.tensor([[7]])}
+
+    def get_vocab(self):
+        return {text: token_id for token_id, text in self.token_texts.items()}
+
+    def decode(self, token_ids, **kwargs):
+        return self.token_texts[token_ids[0]]
+
+
+class ScriptedModel:
+    def __init__(self, preferred_token_ids):
+        self.preferred_token_ids = preferred_token_ids
+        self.calls = 0
+
+    def to(self, device):
+        return self
+
+    def __call__(self, **kwargs):
+        preferred_token_id = self.preferred_token_ids[self.calls]
+        self.calls += 1
+        logits = torch.full((1, 1, 10), -100.0)
+        logits[0, 0, preferred_token_id] = 100.0
+        return SimpleNamespace(logits=logits, past_key_values=None)
+
+
+def profile_schema():
+    return {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+        "additionalProperties": False,
+    }
 
 
 def test_decoder_masks_and_stops_on_a_complete_constraint(monkeypatch):
@@ -75,6 +121,52 @@ def test_decoder_accepts_a_constraint_object(monkeypatch):
     )
 
     assert response == "yes"
+
+
+def test_decoder_generates_schema_constrained_json(monkeypatch):
+    tokenizer = JSONTokenizer()
+    model = ScriptedModel([1, 2, 4, 3, 5])
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    response = Decoder("fake-model").generate(
+        "Generate a profile",
+        constraint=JSONSchemaConstraint(profile_schema()),
+        max_tokens=10,
+        temperature=1.0,
+    )
+
+    assert response == '{"name":"unknown"}'
+    assert model.calls == 5
+
+
+def test_decoder_raises_when_json_constraint_has_no_valid_token(monkeypatch):
+    tokenizer = JSONTokenizer()
+    tokenizer.token_texts = {1: "["}
+    model = FakeModel(preferred_token_id=1)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    decoder = Decoder("fake-model")
+
+    with pytest.raises(ValueError, match="constraint has no valid next token IDs"):
+        decoder.generate(
+            "Generate a profile",
+            constraint=JSONSchemaConstraint(profile_schema()),
+            max_tokens=1,
+        )
 
 
 def test_decoder_raises_when_no_token_can_continue_constraint(monkeypatch):
