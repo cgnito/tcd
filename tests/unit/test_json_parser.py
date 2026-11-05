@@ -1,6 +1,7 @@
 import pytest
 
 from tcd.json_parser import JsonParserState
+from tcd.schema import compile_schema
 
 
 @pytest.mark.parametrize(
@@ -139,3 +140,115 @@ def test_parser_keeps_structural_prefixes_incomplete(prefix):
     state.consume(prefix)
 
     assert not state.is_complete()
+
+
+def test_schema_parser_accepts_declared_property_types():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+                "active": {"type": "boolean"},
+            },
+            "required": ["name", "age", "active"],
+            "additionalProperties": False,
+        }
+    )
+    state = JsonParserState(schema)
+
+    state.consume('{"name": "Ada", "age": 36, "active": true}')
+
+    assert state.is_complete()
+
+
+def test_schema_parser_requires_required_properties_before_object_close():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
+    )
+    state = JsonParserState(schema)
+
+    with pytest.raises(ValueError, match="required"):
+        state.consume("{}")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"name": 42}',
+        '{"age": "36"}',
+        '{"active": null}',
+    ],
+)
+def test_schema_parser_rejects_property_type_mismatches(value):
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+                "active": {"type": "boolean"},
+            },
+        }
+    )
+    state = JsonParserState(schema)
+
+    with pytest.raises(ValueError, match="type"):
+        state.consume(value)
+
+
+def test_schema_parser_rejects_unknown_and_duplicate_properties():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": False,
+        }
+    )
+
+    with pytest.raises(ValueError, match="unknown"):
+        JsonParserState(schema).consume('{"unknown": true}')
+
+    with pytest.raises(ValueError, match="duplicate"):
+        JsonParserState(schema).consume('{"name": "Ada", "name": "Grace"}')
+
+
+def test_schema_parser_allows_optional_and_additional_properties_by_policy():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": True,
+        }
+    )
+    state = JsonParserState(schema)
+
+    state.consume('{"other": false}')
+
+    assert state.is_complete()
+
+
+def test_schema_parser_applies_nested_object_schema():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "object",
+                    "properties": {"active": {"type": "boolean"}},
+                    "required": ["active"],
+                    "additionalProperties": False,
+                }
+            },
+            "required": ["profile"],
+        }
+    )
+
+    state = JsonParserState(schema)
+    state.consume('{"profile": {"active": true}}')
+
+    assert state.is_complete()
