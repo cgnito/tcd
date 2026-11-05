@@ -3,7 +3,10 @@
 
 from typing import Protocol
 
+from .json_parser import JsonParserState
+from .schema import SchemaNode, compile_schema
 from .state import DFA
+from .token_index import TokenIndex
 
 
 class Constraint(Protocol):
@@ -38,9 +41,7 @@ class RegexConstraint:
     def __init__(self, pattern: str):
         self.pattern = pattern
         self.dfa = DFA(pattern)
-        self._tokenizer = None
-        self._tokens_by_first_symbol: dict[str, list[tuple[int, str]]] = {}
-        self._token_text_by_id: dict[int, str] = {}
+        self._token_index: TokenIndex | None = None
 
     def bind(self, tokenizer) -> None:
         """Attach a tokenizer for vocabulary lookup.
@@ -50,10 +51,7 @@ class RegexConstraint:
         tokenizer
             Tokenizer whose vocabulary will be checked against the DFA.
         """
-        self._tokenizer = tokenizer
-        self._tokens_by_first_symbol = {}
-        self._token_text_by_id = {}
-        self._index_vocabulary()
+        self._token_index = TokenIndex(tokenizer)
 
     def valid_token_ids(self) -> list[int]:
         """Return token IDs that can continue the regex match.
@@ -63,13 +61,12 @@ class RegexConstraint:
         list[int]
             Sorted vocabulary IDs whose full decoded text is valid.
         """
-        self._require_bound()
+        token_index = self._require_bound()
         valid_token_ids = []
 
-        for symbol in self.dfa.valid_symbols():
-            for token_id, text in self._tokens_by_first_symbol.get(symbol, []):
-                if self._can_consume(text):
-                    valid_token_ids.append(token_id)
+        for token_id, text in token_index.entries(self.dfa.valid_symbols()):
+            if self._can_consume(text):
+                valid_token_ids.append(token_id)
 
         return sorted(valid_token_ids)
 
@@ -81,8 +78,7 @@ class RegexConstraint:
         token_id
             Vocabulary ID selected by the decoder.
         """
-        self._require_bound()
-        text = self._token_text_by_id[token_id]
+        text = self._require_bound().text(token_id)
         for symbol in text:
             self.dfa.transition(self.dfa.current_state, symbol)
 
@@ -99,20 +95,55 @@ class RegexConstraint:
                 return False
         return True
 
-    def _index_vocabulary(self) -> None:
-        """Decode the vocabulary once and group tokens by their first symbol."""
-        for token_id in self._tokenizer.get_vocab().values():
-            text = self._tokenizer.decode(
-                [token_id],
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
-            if not text:
-                continue
-
-            self._token_text_by_id[token_id] = text
-            self._tokens_by_first_symbol.setdefault(text[0], []).append((token_id, text))
-
-    def _require_bound(self) -> None:
-        if self._tokenizer is None:
+    def _require_bound(self) -> TokenIndex:
+        if self._token_index is None:
             raise RuntimeError("RegexConstraint must be bound to a tokenizer")
+        return self._token_index
+
+
+class JSONSchemaConstraint:
+    """Constrain token generation with an incremental JSON Schema parser."""
+
+    def __init__(self, schema: SchemaNode | dict[str, object]):
+        self.schema = compile_schema(schema) if isinstance(schema, dict) else schema
+        self._parser = JsonParserState(self.schema)
+        self._token_index: TokenIndex | None = None
+
+    def bind(self, tokenizer) -> None:
+        """Attach a tokenizer for vocabulary lookup.
+
+        Parameters
+        ----------
+        tokenizer
+            Tokenizer whose vocabulary will be checked against the parser.
+        """
+        self._token_index = TokenIndex(tokenizer)
+
+    def valid_token_ids(self) -> list[int]:
+        """Return token IDs whose text can continue the JSON document."""
+        token_index = self._require_bound()
+        valid_token_ids = []
+        for token_id, text in token_index.entries(self._parser.valid_symbols()):
+            if self._parser.can_consume(text):
+                valid_token_ids.append(token_id)
+        return sorted(valid_token_ids)
+
+    def consume_token(self, token_id: int) -> None:
+        """Commit a generated token to the JSON parser.
+
+        Parameters
+        ----------
+        token_id
+            Vocabulary ID selected by the decoder.
+        """
+        self._parser.consume(self._require_bound().text(token_id))
+
+    def is_complete(self) -> bool:
+        """Return whether the JSON document is complete and schema-valid."""
+        self._require_bound()
+        return self._parser.is_complete()
+
+    def _require_bound(self) -> TokenIndex:
+        if self._token_index is None:
+            raise RuntimeError("JSONSchemaConstraint must be bound to a tokenizer")
+        return self._token_index
