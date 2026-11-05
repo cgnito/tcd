@@ -99,6 +99,9 @@ patterns through the public API. The [`notes/`](notes/) directory contains my
 working explanations and learning notes for anyone who wants a glimpse of how
 I understand the pieces as I build them.
 
+For a quick overview of how constraints connect the tokenizer, state machine,
+and decoder, see [`notes/constraint-flow.md`](notes/constraint-flow.md).
+
 ## Contributing
 
 TCD is an active investigation, so contributions that improve correctness,
