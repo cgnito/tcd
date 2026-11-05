@@ -63,6 +63,14 @@ def test_object_schema_rejects_unknown_properties_when_disabled():
     assert not node.allows_property("unknown")
 
 
+def test_compile_schema_preserves_primitive_enum_values():
+    node = compile_schema(
+        {"type": "string", "enum": ["red", "blue"]}
+    )
+
+    assert node == PrimitiveSchema("string", frozenset({"red", "blue"}))
+
+
 @pytest.mark.parametrize(
     "schema",
     [
@@ -73,6 +81,10 @@ def test_object_schema_rejects_unknown_properties_when_disabled():
         {"type": "object", "required": "name"},
         {"type": "object", "required": ["missing"]},
         {"type": "object", "additionalProperties": "false"},
+        {"type": "string", "enum": []},
+        {"type": "string", "enum": "red"},
+        {"type": "string", "enum": ["red", 1]},
+        {"type": "integer", "enum": [True]},
     ],
 )
 def test_compile_schema_rejects_unsupported_or_invalid_input(schema):

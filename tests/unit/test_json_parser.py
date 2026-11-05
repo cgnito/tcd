@@ -252,3 +252,40 @@ def test_schema_parser_applies_nested_object_schema():
     state.consume('{"profile": {"active": true}}')
 
     assert state.is_complete()
+
+
+def test_schema_parser_enforces_string_enum_values():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {
+                "color": {"type": "string", "enum": ["red", "blue"]}
+            },
+        }
+    )
+
+    valid_state = JsonParserState(schema)
+    valid_state.consume('{"color": "red"}')
+    assert valid_state.is_complete()
+
+    with pytest.raises(ValueError, match="enum"):
+        JsonParserState(schema).consume('{"color": "green"}')
+
+
+def test_schema_parser_allows_optional_properties_in_any_order():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        }
+    )
+
+    state = JsonParserState(schema)
+    state.consume('{"age": 36, "name": "Ada"}')
+
+    assert state.is_complete()

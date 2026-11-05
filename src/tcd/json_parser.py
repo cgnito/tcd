@@ -1,6 +1,7 @@
 """Parse JSON incrementally with a stack of structural contexts."""
 
 from copy import deepcopy
+import json
 
 from .schema import ObjectSchema, PrimitiveSchema, SchemaNode
 
@@ -24,6 +25,7 @@ class JsonParserState:
         self._pending_schema: SchemaNode | None = None
         self._mode = "structural"
         self._number_kind: str | None = None
+        self._number_buffer = ""
         self._literal: str | None = None
         self._literal_index = 0
         self._unicode_digits = 0
@@ -124,6 +126,7 @@ class JsonParserState:
             and self._active_kind == "value"
             and self._mode == "number"
             and self._number_kind in {"zero", "digits"}
+            and self._number_is_allowed()
         )
 
     def _consume_char(self, char: str) -> None:
@@ -224,14 +227,17 @@ class JsonParserState:
             self._active_kind = "value"
             self._mode = "number"
             self._number_kind = "sign"
+            self._number_buffer = char
         elif char == "0":
             self._active_kind = "value"
             self._mode = "number"
             self._number_kind = "zero"
+            self._number_buffer = char
         elif char in "123456789":
             self._active_kind = "value"
             self._mode = "number"
             self._number_kind = "digits"
+            self._number_buffer = char
         elif char in "tfn":
             self._active_kind = "value"
             self._mode = "literal"
@@ -248,12 +254,13 @@ class JsonParserState:
     def _consume_string_char(self, char: str) -> None:
         if char == '"':
             kind = self._active_kind
+            value = json.loads(f'"{self._string_buffer}"')
             self._active_kind = None
             self._mode = "structural"
             if kind == "key":
                 self._finish_key()
             else:
-                self._complete_value()
+                self._complete_value(value)
         elif char == "\\":
             self._mode = "string_escape"
             self._string_buffer += char
@@ -288,14 +295,18 @@ class JsonParserState:
         if self._literal_index == len(self._literal):
             self._active_kind = None
             self._mode = "structural"
-            self._complete_value()
+            self._complete_value(
+                {"true": True, "false": False, "null": None}[self._literal]
+            )
 
     def _consume_number_char(self, char: str) -> None:
         if self._number_kind == "sign":
             if char == "0":
                 self._number_kind = "zero"
+                self._number_buffer += char
             elif char in "123456789":
                 self._number_kind = "digits"
+                self._number_buffer += char
             else:
                 raise ValueError(f"invalid JSON number character: {char!r}")
         elif self._number_kind == "zero":
@@ -305,6 +316,7 @@ class JsonParserState:
                 raise ValueError(f"invalid JSON number character: {char!r}")
         elif char in "0123456789":
             self._number_kind = "digits"
+            self._number_buffer += char
         elif char in _NUMBER_DELIMITERS:
             self._finish_number(char)
         else:
@@ -313,10 +325,17 @@ class JsonParserState:
     def _finish_number(self, delimiter: str) -> None:
         self._active_kind = None
         self._mode = "structural"
-        self._complete_value()
+        self._complete_value(int(self._number_buffer))
         self._consume_structural_char(delimiter)
 
-    def _complete_value(self) -> None:
+    def _complete_value(self, value: object = None) -> None:
+        expected_schema = self._expected_schema()
+        if (
+            isinstance(expected_schema, PrimitiveSchema)
+            and expected_schema.enum_values is not None
+            and value not in expected_schema.enum_values
+        ):
+            raise ValueError(f"value is not in the allowed enum: {value!r}")
         if not self._stack:
             self._root_complete = True
             return
@@ -328,6 +347,14 @@ class JsonParserState:
             frame["pending_name"] = None
             frame["pending_schema"] = None
         frame["phase"] = "comma_or_end"
+
+    def _number_is_allowed(self) -> bool:
+        schema = self._expected_schema()
+        return not (
+            isinstance(schema, PrimitiveSchema)
+            and schema.enum_values is not None
+            and int(self._number_buffer) not in schema.enum_values
+        )
 
     def _close_container(self, kind: str) -> None:
         if not self._stack or self._stack[-1]["kind"] != kind:

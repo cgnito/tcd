@@ -18,6 +18,7 @@ class PrimitiveSchema:
     """Represent a supported JSON primitive type."""
 
     value_type: str
+    enum_values: frozenset[object] | None = None
 
 
 @dataclass(frozen=True)
@@ -76,8 +77,9 @@ def compile_schema(schema: Mapping[str, object]) -> SchemaNode:
         raise SchemaError("schema type must be a string")
 
     if value_type in _PRIMITIVE_TYPES:
-        _reject_unknown_keys(schema, {"type"})
-        return PrimitiveSchema(value_type)
+        _reject_unknown_keys(schema, {"type", "enum"})
+        enum_values = _compile_enum(schema.get("enum"), value_type)
+        return PrimitiveSchema(value_type, enum_values)
     if value_type == "object":
         return _compile_object_schema(schema)
     raise SchemaError(f"unsupported schema type: {value_type!r}")
@@ -122,3 +124,22 @@ def _reject_unknown_keys(schema: Mapping[str, object], allowed: set[str]) -> Non
     unknown = set(schema) - allowed
     if unknown:
         raise SchemaError(f"unsupported schema keywords: {sorted(unknown)}")
+
+
+def _compile_enum(raw_enum: object, value_type: str) -> frozenset[object] | None:
+    if raw_enum is None:
+        return None
+    if not isinstance(raw_enum, list) or not raw_enum:
+        raise SchemaError("enum must be a non-empty list")
+
+    for value in raw_enum:
+        if value_type == "string" and not isinstance(value, str):
+            raise SchemaError("string enum values must be strings")
+        if value_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+            raise SchemaError("integer enum values must be integers")
+        if value_type == "boolean" and not isinstance(value, bool):
+            raise SchemaError("boolean enum values must be booleans")
+        if value_type == "null" and value is not None:
+            raise SchemaError("null enum values must be null")
+
+    return frozenset(raw_enum)
