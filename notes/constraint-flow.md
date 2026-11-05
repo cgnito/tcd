@@ -1,5 +1,85 @@
 # Constraint Flow Overview
 
+The model generates token IDs, while the constraint state machines understand
+characters and JSON structure. A constraint bridges those two worlds:
+
+```text
+model token ID
+    -> cached decoded text
+    -> constraint state machine
+    -> valid or invalid continuation
+```
+
+## Public API
+
+Regex constraints use the regex-backed DFA:
+
+```python
+from tcd import Decoder, RegexConstraint
+
+decoder = Decoder()
+
+response = decoder.generate(
+    prompt="Is Python a programming language?",
+    constraint=RegexConstraint("yes|no"),
+)
+```
+
+
+JSON constraints use the schema-backed parser:
+
+```python
+from tcd import Decoder, JSONSchemaConstraint
+
+schema = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}},
+    "required": ["name"],
+    "additionalProperties": False,
+}
+
+response = Decoder().generate(
+    prompt="Generate a user profile.",
+    constraint=JSONSchemaConstraint(schema),
+)
+```
+
+The decoder does not need to know whether a constraint uses a DFA or a JSON
+parser. Both provide the same operations:
+
+```text
+bind(tokenizer)
+valid_token_ids()
+consume_token(token_id)
+is_complete()
+```
+
+## TokenIndex
+
+`TokenIndex` is shared by both constraint types. It is not a JSON-only or
+regex-only component.
+
+When a constraint is bound to the decoder's tokenizer, `TokenIndex`:
+
+1. Decodes each vocabulary token once.
+2. Caches decoded text by token ID.
+3. Groups tokens by their first decoded character.
+
+For example:
+
+```text
+"{"  -> [(0, "{")]
+"\"" -> [(1, "\"name\""), (3, "\"Ada\"")]
+":"  -> [(2, ":")]
+```
+
+The index does not decide validity. It only returns possible candidates. The
+constraint's state machine checks whether each complete token can be consumed.
+
+Most states use the first-character buckets. While inside a JSON string, any
+non-control character may be valid, so the JSON constraint may inspect all
+cached entries and reject tokens containing invalid text.
+
 ## Regex Flow
 
 Suppose the constraint is:
@@ -20,23 +100,15 @@ q0 --y--> q1 --e--> q2 --s--> q3 accepting
 q4 --o--> q5 accepting
 ```
 
-At `q0`, the DFA reports:
+At `q0`, the DFA reports the valid next symbols:
 
 ```python
 {"y", "n"}
 ```
 
-### 2. Find candidate token buckets
+### 2. Find candidate tokens
 
-The regex constraint asks:
-
-```python
-token_index.entries({"y", "n"})
-```
-
-This returns tokens whose first character is `y` or `n`.
-
-For example:
+`RegexConstraint` asks the shared index for tokens beginning with `y` or `n`:
 
 ```text
 "y"
@@ -46,9 +118,10 @@ For example:
 "yea"
 ```
 
-### 3. Check every complete token
+### 3. Simulate complete token text
 
-Each candidate is simulated character by character:
+A token is not validated only by its first character. Its entire decoded text
+must follow DFA transitions.
 
 ```text
 candidate: "yes"
@@ -60,15 +133,11 @@ q2 --s--> q3
 valid
 ```
 
-For:
+But:
 
 ```text
 candidate: "yea"
-```
 
-the final transition fails:
-
-```text
 q0 --y--> q1
 q1 --e--> q2
 q2 --a--> invalid
@@ -78,26 +147,15 @@ reject
 
 The valid token IDs are returned to the decoder.
 
-### 4. Decoder masks logits
+### 4. Mask and sample
 
-The decoder creates a mask:
-
-```text
-valid token IDs -> unchanged logits
-all other IDs    -> -infinity
-```
-
-Then it samples from the remaining tokens.
+The decoder keeps valid logits and sets every other logit to negative infinity.
+An invalid token therefore has zero probability and cannot be sampled.
 
 ### 5. Commit the selected token
 
-If the model selects the token `"yes"`:
-
-```python
-constraint.consume_token(token_id)
-```
-
-The regex constraint uses the cached text `"yes"` and moves the real DFA:
+If the model selects the token `"yes"`, the constraint uses its cached text and
+moves the real DFA:
 
 ```text
 q0 -> q1 -> q2 -> q3
@@ -107,123 +165,70 @@ Since `q3` is accepting, generation stops.
 
 ## JSON Flow
 
-Suppose the schema is:
+Suppose the schema requires a single string property:
 
 ```python
 {
     "type": "object",
-    "properties": {
-        "name": {"type": "string"},
-    },
+    "properties": {"name": {"type": "string"}},
     "required": ["name"],
     "additionalProperties": False,
 }
 ```
 
-### 1. Create the JSON parser state
+### 1. Create parser state
 
-`JSONSchemaConstraint` creates:
-
-```text
-JsonParserState(schema)
-```
-
-Initially:
+`JSONSchemaConstraint` creates a schema-aware `JsonParserState`:
 
 ```text
-parser is at the root
+root parser state
 no object has started
+empty stack
 ```
 
-### 2. Ask the parser for valid symbols
+Unlike the regex DFA, the JSON parser uses a stack because objects and arrays
+can be nested:
 
-At the root, valid JSON starts include:
+```text
+root object
+    nested object
+        array
+```
+
+### 2. Ask for valid symbols
+
+The schema says the root must be an object, so although JSON generally allows
+many value starts, the parser only allows:
 
 ```text
 {
-[
-"
--
-digits
-true
-false
-null
 ```
 
-But because the root schema is an object, the schema-aware parser only allows:
+### 3. Find and simulate candidates
 
-```text
-{
-```
+The JSON constraint asks `TokenIndex` for tokens beginning with `{`, then tests
+each complete token using `parser.can_consume(token_text)`.
 
-### 3. Use TokenIndex
+The token `"{"` is valid. A token beginning with `[` is rejected because the
+schema requires an object.
 
-The JSON constraint asks `TokenIndex` for tokens beginning with `{`.
+### 4. Commit structure
 
-Possible candidates:
-
-```text
-"{"
-"{\"name\""
-"["
-```
-
-Then each candidate is checked with:
-
-```python
-parser.can_consume(token_text)
-```
-
-The token `"{"` is valid. The token `"["` is rejected because the schema requires an object.
-
-### 4. Decoder masks and samples
-
-The decoder receives the valid token ID for `"{"`, masks everything else, and samples it.
-
-### 5. Commit the selected token
-
-The JSON constraint calls:
-
-```python
-parser.consume("{")
-```
-
-The parser pushes an object frame:
-
-```text
-stack:
-    root object
-```
-
-The object frame tracks:
+After selecting `{`, the parser pushes an object frame containing:
 
 ```text
 schema
 seen properties
-current property
+pending property
+pending value schema
 current parsing phase
 ```
 
-### 6. Continue property parsing
+The next valid property name must be quoted. With
+`additionalProperties=False`, `"unknown"` is rejected and `"name"` is
+accepted.
 
-After `{`, the parser allows a quoted property name.
-
-The tokenizer index finds quote-starting candidates:
-
-```text
-"name"
-"unknown"
-```
-
-The parser simulation rejects `"unknown"` because:
-
-```python
-additionalProperties == False
-```
-
-It accepts `"name"`.
-
-Then the expected flow is:
+The expected flow is:
 
 ```text
 {
@@ -233,77 +238,96 @@ Then the expected flow is:
     -> }
 ```
 
-When `}` is tested, the parser checks:
+When `}` is tested, the parser checks that all required properties were seen.
+If `name` was present, the object can complete.
+
+## Candidate Simulation and Commitment
+
+`can_consume(text)` is simulation. It copies the current JSON parser state,
+tries every character of the candidate text, and returns `True` or `False`:
 
 ```text
-required properties seen?
+real parser state
+        |
+        | copy
+        v
+candidate parser state
+        |
+try candidate token text
+        |
+True or False
 ```
 
-Since `"name"` was seen, the object can complete.
+The real parser state does not change during candidate lookup. Only the token
+selected by the model is committed with `consume_token(token_id)`.
 
-## The Full Shared Flow
-
-Both constraints follow the same decoder contract:
+Regex uses the same idea in `_can_consume(text)`, but it copies a local DFA
+state instead of a JSON parser stack.
 
 ```text
-constraint.bind(tokenizer)
-        |
-        v
-TokenIndex decodes and indexes vocabulary once
-        |
-        v
- decoder asks constraint.valid_token_ids()
-        |
-        v
-constraint asks its state machine for valid symbols
-        |
-        v
-TokenIndex finds candidate token buckets
-        |
-        v
-constraint simulates each full token
-        |
-        v
-valid token IDs go to decoder
-        |
-        v
-decoder masks logits
-        |
-        v
-model selects one token ID
-        |
-        v
-constraint.consume_token(token_id)
-        |
-        v
-real DFA/parser state advances
-        |
-        v
-constraint.is_complete()
+RegexConstraint
+    TokenIndex + DFA simulation
+
+JSONSchemaConstraint
+    TokenIndex + JSON parser simulation
 ```
 
-## Important Correction to Your Mental Model
+## Complete Decoder Flow
 
-You said:
+Every generation step follows the same contract:
 
-> before the decoder predicts a text, the tokenizer decodes the tokens and indexes them
+```text
+1. bind the constraint to the tokenizer
+2. run the model and get next-token logits
+3. ask the constraint for valid token IDs
+4. use those IDs to mask invalid logits
+5. sample one token ID
+6. commit the token through consume_token()
+7. stop if is_complete() is true
+8. otherwise run the model again
+```
 
-Almost correct, but more precisely:
+The state machines remain different:
+
+```text
+regex pattern
+    -> NFA
+    -> DFA
+    -> RegexConstraint
+
+JSON Schema
+    -> schema nodes
+    -> parser state + stack
+    -> JSONSchemaConstraint
+```
+
+They share the decoder contract and `TokenIndex`, not one implementation of
+state. A DFA is appropriate for the finite state of the supported regexes;
+JSON nesting requires parser frames and a stack.
+
+## Important Tokenization Detail
+
+The model predicts token IDs, not text. The tokenizer index decodes the
+vocabulary once before generation:
 
 ```text
 Before generation:
-    tokenizer vocabulary is decoded once and indexed.
+    decode and index vocabulary once.
 
-At each generation step:
-    the constraint asks the index for likely candidates.
-    candidate token text is simulated against the state machine.
-    valid token IDs are passed to the decoder.
+At each step:
+    find candidate buckets.
+    simulate complete token text.
+    return valid token IDs.
 
-During model prediction:
-    the model predicts token IDs, not text.
-
-After prediction:
-    the selected token ID is decoded from the cache and committed.
+After sampling:
+    use cached token text.
+    commit it to the DFA or JSON parser.
 ```
 
-The tokenizer does not repeatedly decode every token before every prediction. That was the original expensive approach. `TokenIndex` avoids that repeated work.
+The tokenizer does not repeatedly decode every token before every prediction.
+That was the original expensive approach. `TokenIndex` avoids that repeated
+work.
+
+The current implementation decodes token IDs independently. Byte-level,
+context-sensitive, special-token, and more complex token-boundary behavior are
+future tokenizer-integration work.
