@@ -46,7 +46,14 @@ class ObjectSchema:
         return name in self.properties or self.additional_properties
 
 
-SchemaNode = PrimitiveSchema | ObjectSchema
+@dataclass(frozen=True)
+class ArraySchema:
+    """Represent an array whose elements share one schema."""
+
+    items: SchemaNode
+
+
+SchemaNode = PrimitiveSchema | ObjectSchema | ArraySchema
 
 
 def compile_schema(schema: Mapping[str, object]) -> SchemaNode:
@@ -82,6 +89,8 @@ def compile_schema(schema: Mapping[str, object]) -> SchemaNode:
         return PrimitiveSchema(value_type, enum_values)
     if value_type == "object":
         return _compile_object_schema(schema)
+    if value_type == "array":
+        return _compile_array_schema(schema)
     raise SchemaError(f"unsupported schema type: {value_type!r}")
 
 
@@ -118,6 +127,16 @@ def _compile_object_schema(schema: Mapping[str, object]) -> ObjectSchema:
         required=frozenset(raw_required),
         additional_properties=additional_properties,
     )
+
+
+def _compile_array_schema(schema: Mapping[str, object]) -> ArraySchema:
+    _reject_unknown_keys(schema, {"type", "items"})
+    if "items" not in schema:
+        raise SchemaError("array schema must define items")
+    items = schema["items"]
+    if not isinstance(items, Mapping):
+        raise SchemaError("array items must be a schema object")
+    return ArraySchema(items=compile_schema(items))
 
 
 def _reject_unknown_keys(schema: Mapping[str, object], allowed: set[str]) -> None:

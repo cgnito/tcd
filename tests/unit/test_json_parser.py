@@ -289,3 +289,38 @@ def test_schema_parser_allows_optional_properties_in_any_order():
     state.consume('{"age": 36, "name": "Ada"}')
 
     assert state.is_complete()
+
+
+def test_schema_parser_enforces_array_item_types():
+    schema = compile_schema(
+        {"type": "array", "items": {"type": "integer"}}
+    )
+
+    state = JsonParserState(schema)
+    state.consume("[1, 2, 3]")
+
+    assert state.is_complete()
+
+    with pytest.raises(ValueError, match="type"):
+        JsonParserState(schema).consume("[1, true]")
+
+
+def test_schema_parser_accepts_empty_arrays_and_nested_object_items():
+    array_schema = compile_schema(
+        {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}},
+                "required": ["id"],
+            },
+        }
+    )
+
+    empty_state = JsonParserState(array_schema)
+    empty_state.consume("[]")
+    assert empty_state.is_complete()
+
+    nested_state = JsonParserState(array_schema)
+    nested_state.consume('[{"id": 1}, {"id": 2}]')
+    assert nested_state.is_complete()

@@ -3,7 +3,7 @@
 from copy import deepcopy
 import json
 
-from .schema import ObjectSchema, PrimitiveSchema, SchemaNode
+from .schema import ArraySchema, ObjectSchema, PrimitiveSchema, SchemaNode
 
 
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
@@ -220,7 +220,13 @@ class JsonParserState:
                 }
             )
         elif char == "[":
-            self._stack.append({"kind": "array", "phase": "value_or_end"})
+            self._stack.append(
+                {
+                    "kind": "array",
+                    "phase": "value_or_end",
+                    "schema": expected_schema,
+                }
+            )
         elif char == '"':
             self._start_string("value")
         elif char == "-":
@@ -372,6 +378,11 @@ class JsonParserState:
         if not self._stack:
             return self._schema
         frame = self._stack[-1]
+        if frame["kind"] == "array":
+            schema = frame.get("schema")
+            if isinstance(schema, ArraySchema):
+                return schema.items
+            return None
         return frame.get("pending_schema")
 
     def _validate_value_start(
@@ -384,6 +395,10 @@ class JsonParserState:
         if isinstance(schema, ObjectSchema):
             if char != "{":
                 raise ValueError("value does not match object type")
+            return
+        if isinstance(schema, ArraySchema):
+            if char != "[":
+                raise ValueError("value does not match array type")
             return
         expected_starts = {
             "string": {'"'},

@@ -1,6 +1,6 @@
 import pytest
 
-from tcd.schema import ObjectSchema, PrimitiveSchema, SchemaError, compile_schema
+from tcd.schema import ArraySchema, ObjectSchema, PrimitiveSchema, SchemaError, compile_schema
 
 
 @pytest.mark.parametrize("value_type", ["string", "integer", "boolean", "null"])
@@ -71,6 +71,14 @@ def test_compile_schema_preserves_primitive_enum_values():
     assert node == PrimitiveSchema("string", frozenset({"red", "blue"}))
 
 
+def test_compile_schema_builds_array_item_schema():
+    node = compile_schema(
+        {"type": "array", "items": {"type": "integer"}}
+    )
+
+    assert node == ArraySchema(items=PrimitiveSchema("integer"))
+
+
 @pytest.mark.parametrize(
     "schema",
     [
@@ -85,6 +93,9 @@ def test_compile_schema_preserves_primitive_enum_values():
         {"type": "string", "enum": "red"},
         {"type": "string", "enum": ["red", 1]},
         {"type": "integer", "enum": [True]},
+        {"type": "array"},
+        {"type": "array", "items": "integer"},
+        {"type": "array", "items": {"type": "array"}},
     ],
 )
 def test_compile_schema_rejects_unsupported_or_invalid_input(schema):
