@@ -71,6 +71,18 @@ def test_compile_schema_preserves_primitive_enum_values():
     assert node == PrimitiveSchema("string", frozenset({"red", "blue"}))
 
 
+def test_compile_schema_preserves_number_and_string_bounds():
+    number_node = compile_schema(
+        {"type": "integer", "minimum": 1, "maximum": 10}
+    )
+    string_node = compile_schema(
+        {"type": "string", "minLength": 2, "maxLength": 5}
+    )
+
+    assert number_node == PrimitiveSchema("integer", None, 1, 10, None, None)
+    assert string_node == PrimitiveSchema("string", None, None, None, 2, 5)
+
+
 def test_compile_schema_builds_array_item_schema():
     node = compile_schema(
         {"type": "array", "items": {"type": "integer"}}
@@ -93,6 +105,11 @@ def test_compile_schema_builds_array_item_schema():
         {"type": "string", "enum": "red"},
         {"type": "string", "enum": ["red", 1]},
         {"type": "integer", "enum": [True]},
+        {"type": "integer", "minimum": "1"},
+        {"type": "integer", "maximum": 1.5},
+        {"type": "string", "minLength": -1},
+        {"type": "string", "maxLength": "5"},
+        {"type": "string", "minLength": 5, "maxLength": 2},
         {"type": "array"},
         {"type": "array", "items": "integer"},
         {"type": "array", "items": {"type": "array"}},

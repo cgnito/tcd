@@ -19,6 +19,10 @@ class PrimitiveSchema:
 
     value_type: str
     enum_values: frozenset[object] | None = None
+    minimum: int | None = None
+    maximum: int | None = None
+    min_length: int | None = None
+    max_length: int | None = None
 
 
 @dataclass(frozen=True)
@@ -84,9 +88,33 @@ def compile_schema(schema: Mapping[str, object]) -> SchemaNode:
         raise SchemaError("schema type must be a string")
 
     if value_type in _PRIMITIVE_TYPES:
-        _reject_unknown_keys(schema, {"type", "enum"})
+        allowed_keys = {"type", "enum"}
+        if value_type == "integer":
+            allowed_keys |= {"minimum", "maximum"}
+        if value_type == "string":
+            allowed_keys |= {"minLength", "maxLength"}
+        _reject_unknown_keys(schema, allowed_keys)
         enum_values = _compile_enum(schema.get("enum"), value_type)
-        return PrimitiveSchema(value_type, enum_values)
+        minimum = _compile_bound(schema.get("minimum"), "minimum", value_type)
+        maximum = _compile_bound(schema.get("maximum"), "maximum", value_type)
+        min_length = _compile_length(schema.get("minLength"), "minLength", value_type)
+        max_length = _compile_length(schema.get("maxLength"), "maxLength", value_type)
+        if (
+            min_length is not None
+            and max_length is not None
+            and min_length > max_length
+        ):
+            raise SchemaError("minLength cannot exceed maxLength")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise SchemaError("minimum cannot exceed maximum")
+        return PrimitiveSchema(
+            value_type,
+            enum_values,
+            minimum,
+            maximum,
+            min_length,
+            max_length,
+        )
     if value_type == "object":
         return _compile_object_schema(schema)
     if value_type == "array":
@@ -162,3 +190,23 @@ def _compile_enum(raw_enum: object, value_type: str) -> frozenset[object] | None
             raise SchemaError("null enum values must be null")
 
     return frozenset(raw_enum)
+
+
+def _compile_bound(raw_bound: object, name: str, value_type: str) -> int | None:
+    if raw_bound is None:
+        return None
+    if value_type != "integer":
+        raise SchemaError(f"{name} is only supported for integer schemas")
+    if not isinstance(raw_bound, int) or isinstance(raw_bound, bool):
+        raise SchemaError(f"{name} must be an integer")
+    return raw_bound
+
+
+def _compile_length(raw_length: object, name: str, value_type: str) -> int | None:
+    if raw_length is None:
+        return None
+    if value_type != "string":
+        raise SchemaError(f"{name} is only supported for string schemas")
+    if not isinstance(raw_length, int) or isinstance(raw_length, bool) or raw_length < 0:
+        raise SchemaError(f"{name} must be a non-negative integer")
+    return raw_length

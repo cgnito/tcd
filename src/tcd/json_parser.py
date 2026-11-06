@@ -336,12 +336,7 @@ class JsonParserState:
 
     def _complete_value(self, value: object = None) -> None:
         expected_schema = self._expected_schema()
-        if (
-            isinstance(expected_schema, PrimitiveSchema)
-            and expected_schema.enum_values is not None
-            and value not in expected_schema.enum_values
-        ):
-            raise ValueError(f"value is not in the allowed enum: {value!r}")
+        self._validate_completed_value(value, expected_schema)
         if not self._stack:
             self._root_complete = True
             return
@@ -356,11 +351,44 @@ class JsonParserState:
 
     def _number_is_allowed(self) -> bool:
         schema = self._expected_schema()
-        return not (
-            isinstance(schema, PrimitiveSchema)
-            and schema.enum_values is not None
-            and int(self._number_buffer) not in schema.enum_values
-        )
+        return self._value_is_allowed(int(self._number_buffer), schema)
+
+    def _validate_completed_value(
+        self,
+        value: object,
+        schema: SchemaNode | None,
+    ) -> None:
+        if not isinstance(schema, PrimitiveSchema):
+            return
+        if schema.enum_values is not None and value not in schema.enum_values:
+            raise ValueError(f"value violates enum constraint: {value!r}")
+        if schema.value_type == "integer":
+            if schema.minimum is not None and value < schema.minimum:
+                raise ValueError(f"value violates numeric bound: {value!r}")
+            if schema.maximum is not None and value > schema.maximum:
+                raise ValueError(f"value violates numeric bound: {value!r}")
+        if schema.value_type == "string":
+            if schema.min_length is not None and len(value) < schema.min_length:
+                raise ValueError(f"value violates string length: {value!r}")
+            if schema.max_length is not None and len(value) > schema.max_length:
+                raise ValueError(f"value violates string length: {value!r}")
+
+    def _value_is_allowed(self, value: object, schema: SchemaNode | None) -> bool:
+        if not isinstance(schema, PrimitiveSchema):
+            return True
+        if schema.enum_values is not None and value not in schema.enum_values:
+            return False
+        if schema.value_type == "integer":
+            if schema.minimum is not None and value < schema.minimum:
+                return False
+            if schema.maximum is not None and value > schema.maximum:
+                return False
+        if schema.value_type == "string":
+            if schema.min_length is not None and len(value) < schema.min_length:
+                return False
+            if schema.max_length is not None and len(value) > schema.max_length:
+                return False
+        return True
 
     def _close_container(self, kind: str) -> None:
         if not self._stack or self._stack[-1]["kind"] != kind:

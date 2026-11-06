@@ -324,3 +324,37 @@ def test_schema_parser_accepts_empty_arrays_and_nested_object_items():
     nested_state = JsonParserState(array_schema)
     nested_state.consume('[{"id": 1}, {"id": 2}]')
     assert nested_state.is_complete()
+
+
+def test_schema_parser_enforces_number_bounds():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {"age": {"type": "integer", "minimum": 18, "maximum": 65}},
+        }
+    )
+
+    valid_state = JsonParserState(schema)
+    valid_state.consume('{"age": 18}')
+    assert valid_state.is_complete()
+
+    for value in ("17", "66"):
+        with pytest.raises(ValueError, match="bound"):
+            JsonParserState(schema).consume(f'{{"age": {value}}}')
+
+
+def test_schema_parser_enforces_string_length_bounds():
+    schema = compile_schema(
+        {
+            "type": "object",
+            "properties": {"code": {"type": "string", "minLength": 2, "maxLength": 4}},
+        }
+    )
+
+    valid_state = JsonParserState(schema)
+    valid_state.consume('{"code": "abcd"}')
+    assert valid_state.is_complete()
+
+    for value in ("a", "abcde"):
+        with pytest.raises(ValueError, match="length"):
+            JsonParserState(schema).consume(f'{{"code": "{value}"}}')
