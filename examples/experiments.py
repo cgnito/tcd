@@ -1,28 +1,45 @@
-from tcd import Decoder
+import json
+
+from tcd import Decoder, JSONSchemaConstraint
 
 
 decoder = Decoder()
-prompt = "Answer with one short word. Is Python a programming language?"
+prompt = "Answer according to the supplied constraint."
 constraints = [
-    "yes|no",
-    "cat|dog",
-    "red|blue|green",
-    "a(b|c)",
+    ("regex yes/no", "yes|no"),
+    ("regex animals", "cat|dog"),
+    (
+        "json profile",
+        JSONSchemaConstraint(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer", "minimum": 0},
+                    "is_student": {"type": "boolean"},
+                },
+                "required": ["name", "age", "is_student"],
+                "additionalProperties": False,
+            }
+        ),
+    ),
 ]
 
 print("prompt:", prompt)
 print()
 
-for pattern in constraints:
-    print(f"constraint: {pattern!r}")
+for label, constraint in constraints:
+    print(f"constraint: {label}")
     try:
         response = decoder.generate(
             prompt=prompt,
-            constraint=pattern,
-            max_tokens=10,
+            constraint=constraint,
+            max_tokens=30,
             temperature=0.8,
         )
         print("response:", repr(response))
+        if label == "json profile":
+            print("parsed JSON:", json.loads(response))
     except ValueError as error:
         print("constraint failed:", error)
     print()
