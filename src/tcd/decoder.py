@@ -5,7 +5,7 @@ from .constraints import Constraint, RegexConstraint
 
 
 class Decoder:
-    """Generate text while masking tokens that violate a regex constraint."""
+    """Generate text while masking tokens that violate a constraint."""
 
     def __init__(self, model_name="Qwen/Qwen2.5-0.5B-Instruct"):
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -26,9 +26,9 @@ class Decoder:
         ----------
         prompt
             Input text provided to the language model.
-            constraint
-                Regex pattern or constraint object used to restrict generated
-                text.
+        constraint
+            Regex pattern or constraint object used to restrict generated
+            text.
         max_tokens
             Maximum number of new tokens to generate.
         temperature

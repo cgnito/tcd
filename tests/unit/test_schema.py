@@ -1,6 +1,12 @@
 import pytest
 
-from tcd.schema import ArraySchema, ObjectSchema, PrimitiveSchema, SchemaError, compile_schema
+from tcd.json_parser import (
+    ArraySchema,
+    ObjectSchema,
+    PrimitiveSchema,
+    SchemaError,
+    compile_schema,
+)
 
 
 @pytest.mark.parametrize("value_type", ["string", "integer", "boolean", "null"])

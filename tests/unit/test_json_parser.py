@@ -1,7 +1,6 @@
 import pytest
 
-from tcd.json_parser import JsonParserState
-from tcd.schema import compile_schema
+from tcd.json_parser import JsonParserState, compile_schema
 
 
 @pytest.mark.parametrize(

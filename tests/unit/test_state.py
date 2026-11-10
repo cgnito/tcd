@@ -1,7 +1,7 @@
 import pytest
 
 from tcd import DFA
-from tcd.state import EPSILON, NFA
+from tcd.regex.state import EPSILON, NFA
 
 
 @pytest.mark.parametrize(
