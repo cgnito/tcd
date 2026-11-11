@@ -205,14 +205,21 @@ The two constraint implementations handle this differently:
 
 ```text
 src/tcd/
+├── __init__.py
+│   └── Public package exports.
+│
 ├── decoder.py
 │   └── Model execution, sampling, and logit masking.
 │
 ├── regex/
+│   ├── __init__.py
+│   │   └── Regex automata exports.
 │   └── state.py
 │       └── Regex parsing, NFA construction, and DFA construction.
 │
 ├── constraints/
+│   ├── __init__.py
+│   │   └── Public constraint adapter exports.
 │   ├── protocol.py
 │   │   └── Internal constraint interface used by the decoder.
 │   ├── regex.py
@@ -223,6 +230,8 @@ src/tcd/
 │       └── Shared vocabulary cache and candidate index.
 │
 └── json_parser/
+    ├── __init__.py
+    │   └── JSON parser and schema exports.
     ├── state.py
     │   └── Incremental JSON parser and structural state.
     └── schema.py
