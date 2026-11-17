@@ -260,6 +260,7 @@ def test_metrics_tokens_generated_matches_generation_steps(monkeypatch):
 
     assert response == "yes"
     assert metrics["tokens_generated"] == 1
+    assert metrics["bind_time_s"] >= 0.0
     assert metrics["valid_token_ids_time_s"] >= 0.0
     assert metrics["consume_token_time_s"] >= 0.0
 
@@ -288,6 +289,7 @@ def test_metrics_constraint_timings_are_zero_for_unconstrained_generation(monkey
     )
 
     assert metrics["tokens_generated"] == 3
+    assert metrics["bind_time_s"] == 0.0
     assert metrics["valid_token_ids_time_s"] == 0.0
     assert metrics["consume_token_time_s"] == 0.0
 

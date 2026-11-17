@@ -41,10 +41,13 @@ class Decoder:
             When ``True``, print each token ID and its decoded text.
         _metrics
             Optional dict populated with timing data before returning. Keys:
-            ``tokens_generated`` (int), ``valid_token_ids_time_s`` (float),
-            ``consume_token_time_s`` (float). The last two are ``0.0`` for
-            unconstrained generation. Pass an empty dict to collect metrics;
-            omit for normal use.
+            ``tokens_generated`` (int), ``bind_time_s`` (float),
+            ``valid_token_ids_time_s`` (float), ``consume_token_time_s``
+            (float). The last three are ``0.0`` for unconstrained generation.
+            ``bind_time_s`` reflects a cold-start cost: in this benchmark a
+            new constraint is created per call, so vocabulary indexing is paid
+            every time. Pass an empty dict to collect metrics; omit for normal
+            use.
 
         Returns
         -------
@@ -60,13 +63,16 @@ class Decoder:
 
         response = ""
         tokens_generated = 0
+        bind_time_s = 0.0
         valid_token_ids_time_s = 0.0
         consume_token_time_s = 0.0
 
         if isinstance(constraint, str):
             constraint = RegexConstraint(constraint)
         if constraint is not None:
+            _t = time.perf_counter()
             constraint.bind(self.tokenizer)
+            bind_time_s = time.perf_counter() - _t
 
         with torch.inference_mode():
             inputs = self.tokenizer(prompt, return_tensors="pt")
@@ -114,6 +120,7 @@ class Decoder:
 
         if _metrics is not None:
             _metrics["tokens_generated"] = tokens_generated
+            _metrics["bind_time_s"] = bind_time_s
             _metrics["valid_token_ids_time_s"] = valid_token_ids_time_s
             _metrics["consume_token_time_s"] = consume_token_time_s
 
