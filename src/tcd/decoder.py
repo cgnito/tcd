@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -20,6 +21,7 @@ class Decoder:
         max_tokens=50,
         temperature=0.8,
         verbose: bool = False,
+        _metrics: dict | None = None,
     ):
         """Generate text, optionally constrained to match ``constraint``.
 
@@ -37,6 +39,12 @@ class Decoder:
             Sampling temperature applied to the logits.
         verbose
             When ``True``, print each token ID and its decoded text.
+        _metrics
+            Optional dict populated with timing data before returning. Keys:
+            ``tokens_generated`` (int), ``valid_token_ids_time_s`` (float),
+            ``consume_token_time_s`` (float). The last two are ``0.0`` for
+            unconstrained generation. Pass an empty dict to collect metrics;
+            omit for normal use.
 
         Returns
         -------
@@ -51,6 +59,10 @@ class Decoder:
         """
 
         response = ""
+        tokens_generated = 0
+        valid_token_ids_time_s = 0.0
+        consume_token_time_s = 0.0
+
         if isinstance(constraint, str):
             constraint = RegexConstraint(constraint)
         if constraint is not None:
@@ -65,7 +77,9 @@ class Decoder:
                 next_logits = outputs.logits[0, -1]
 
                 if constraint is not None:
+                    _t = time.perf_counter()
                     allowed_token_ids = constraint.valid_token_ids()
+                    valid_token_ids_time_s += time.perf_counter() - _t
                     if not allowed_token_ids:
                         raise ValueError("constraint has no valid next token IDs")
                     mask = torch.full_like(next_logits, float("-inf"))
@@ -79,9 +93,12 @@ class Decoder:
                 if verbose:
                     print(next_token_id, repr(next_token))
                 response += next_token
+                tokens_generated += 1
 
                 if constraint is not None:
+                    _t = time.perf_counter()
                     constraint.consume_token(next_token_id)
+                    consume_token_time_s += time.perf_counter() - _t
                     if constraint.is_complete() or step == max_tokens - 1:
                         break
                 else:
@@ -94,4 +111,10 @@ class Decoder:
                     past_key_values=outputs.past_key_values,
                     use_cache=True
                 )
+
+        if _metrics is not None:
+            _metrics["tokens_generated"] = tokens_generated
+            _metrics["valid_token_ids_time_s"] = valid_token_ids_time_s
+            _metrics["consume_token_time_s"] = consume_token_time_s
+
         return response

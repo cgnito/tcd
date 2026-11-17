@@ -233,3 +233,84 @@ def test_decoder_stops_at_max_tokens_before_constraint_is_complete(monkeypatch):
 
     assert response == "y"
     assert model.calls == 1
+
+
+def test_metrics_tokens_generated_matches_generation_steps(monkeypatch):
+    # The model always prefers token 2 ("yes"), which completes "yes|no" in
+    # one step. tokens_generated must equal the number of loop iterations.
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    metrics = {}
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint="yes|no",
+        max_tokens=5,
+        temperature=1.0,
+        _metrics=metrics,
+    )
+
+    assert response == "yes"
+    assert metrics["tokens_generated"] == 1
+    assert metrics["valid_token_ids_time_s"] >= 0.0
+    assert metrics["consume_token_time_s"] >= 0.0
+
+
+def test_metrics_constraint_timings_are_zero_for_unconstrained_generation(monkeypatch):
+    # When no constraint is active there is nothing to time. Both constraint
+    # timing fields must be exactly 0.0, not merely small.
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    metrics = {}
+    Decoder("fake-model").generate(
+        "question",
+        constraint=None,
+        max_tokens=3,
+        temperature=1.0,
+        _metrics=metrics,
+    )
+
+    assert metrics["tokens_generated"] == 3
+    assert metrics["valid_token_ids_time_s"] == 0.0
+    assert metrics["consume_token_time_s"] == 0.0
+
+
+def test_metrics_not_populated_when_argument_is_omitted(monkeypatch):
+    # Omitting _metrics must not raise and must not change the return type.
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    result = Decoder("fake-model").generate(
+        "question",
+        constraint="yes|no",
+        max_tokens=5,
+        temperature=1.0,
+    )
+
+    assert isinstance(result, str)
+    assert result == "yes"
