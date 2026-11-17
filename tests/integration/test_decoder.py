@@ -7,6 +7,8 @@ from tcd import Decoder, JSONSchemaConstraint, RegexConstraint
 
 
 class FakeTokenizer:
+    eos_token_id = None
+
     def __init__(self):
         self.token_texts = {0: "y", 1: "n", 2: "yes", 3: "no"}
 
@@ -185,6 +187,29 @@ def test_decoder_raises_when_no_token_can_continue_constraint(monkeypatch):
 
     with pytest.raises(ValueError, match="constraint has no valid next token IDs"):
         decoder.generate("question", constraint="z", max_tokens=1)
+
+
+def test_decoder_generates_unconstrained_output_up_to_max_tokens(monkeypatch):
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint=None,
+        max_tokens=3,
+        temperature=1.0,
+    )
+
+    assert response == "yesyesyes"
+    assert model.calls == 3
 
 
 def test_decoder_stops_at_max_tokens_before_constraint_is_complete(monkeypatch):

@@ -201,6 +201,26 @@ The two constraint implementations handle this differently:
 
 `TokenIndex` provides a shared decoded-vocabulary cache and candidate index. It decodes the vocabulary once and groups tokens by their first character to reduce repeated token lookups during generation.
 
+
+```mermaid
+flowchart TD
+    A[prompt] --> B[tokenize full prompt]
+    B --> C[model forward pass on full prompt]
+    C --> D{step loop}
+    D --> E[get next_logits from last position]
+    E --> F[constraint.valid_token_ids]
+    F --> G["build -inf mask\nexcept allowed IDs"]
+    G --> H[apply mask to logits]
+    H --> I[temperature scale + softmax]
+    I --> J[torch.multinomial sample]
+    J --> K[constraint.consume_token]
+    K --> L{is_complete or max_tokens?}
+    L -- yes --> M[return response string]
+    L -- no --> N["model forward on new token\nwith KV cache"]
+    N --> D
+```
+
+
 ## Project Structure
 
 ```text

@@ -382,18 +382,18 @@ that's much better understanding.
 
 # phase 6 — json grammar
 
-**status:** started
+**status:** ✔️done✔️
 
 only now.
 
 ### learn
 
-* [ ] grammar
+* [x] grammar
 * [ ] terminal
 * [ ] non-terminal
 * [ ] production rule
 * [ ] context-free grammar
-* [ ] parser basics
+* [x] parser basics
 
 then write a simplified json grammar:
 
@@ -427,18 +427,18 @@ at this stage you'll start reading `outlines-core` and actually understanding wh
 
 ### done when
 
-* [ ] i understand the basic components of a grammar
-* [ ] i can define a small json grammar
-* [ ] i can represent grammar states
-* [ ] i can determine valid next tokens from a grammar state
-* [ ] my decoder can generate a constrained json object
-* [ ] i can explain how grammar state affects token selection
+* [x] i understand the basic components of a grammar
+* [x] i can define a small json grammar
+* [x] i can represent grammar states
+* [x] i can determine valid next tokens from a grammar state
+* [x] my decoder can generate a constrained json object
+* [x] i can explain how grammar state affects token selection
 
 ---
 
 # phase 7 — schemas
 
-**status:** ⬜ not started
+**status:** ✔️done✔️
 
 build:
 
@@ -477,18 +477,21 @@ that's good engineering.
 
 ### done when
 
-* [ ] i can define a simple schema
-* [ ] i can convert a schema into my constraint representation
-* [ ] my decoder can generate output matching the schema
-* [ ] i understand the relationship between schemas and grammars
-* [ ] i document which schema features tcd supports
-* [ ] unsupported schema features fail clearly
+* [x] i can define a simple schema
+* [x] i can convert a schema into my constraint representation
+* [x] my decoder can generate output matching the schema
+* [x] i understand the relationship between schemas and grammars
+* [x] i document which schema features tcd supports
+* [x] unsupported schema features fail clearly
 
 ---
 
 # phase 8 — benchmarking
 
-**status:** ⬜ not started
+**status:** ▶️started▶️
+
+this is the remaining major phase. The implementation and constrained
+generation path are built; now the goal is to measure how they behave.
 
 now prove your thing works.
 
