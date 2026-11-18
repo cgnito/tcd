@@ -3,7 +3,8 @@
 import pytest
 
 from benchmark.dataset import TASKS
-from benchmark.runner import _validate, run_normal, run_retry
+from benchmark.runner import _validate, run_normal, run_retry, run_constrained
+from tcd import JSONSchemaConstraint
 
 
 # ---------------------------------------------------------------------------
@@ -315,3 +316,134 @@ def test_run_retry_valid_json_false_and_schema_false_when_exhausted():
     assert result["valid_json"] is False
     assert result["valid_schema"] is False
     assert result["exhausted_retries"] is True
+
+
+# ---------------------------------------------------------------------------
+# Fake decoder for constrained tests
+#
+# Records the constraint argument it receives and reports configurable
+# non-zero timing values so tests can verify the fields flow correctly
+# from _metrics into the result dict.
+# ---------------------------------------------------------------------------
+
+class ConstrainedFakeDecoder:
+    """Fake decoder that records received constraint and returns a fixed output."""
+
+    def __init__(
+        self,
+        output: str,
+        tokens: int = 8,
+        bind_time: float = 0.1,
+        valid_ids_time: float = 0.5,
+        consume_time: float = 0.05,
+    ):
+        self._output = output
+        self._tokens = tokens
+        self._bind_time = bind_time
+        self._valid_ids_time = valid_ids_time
+        self._consume_time = consume_time
+        self.received_constraint = None
+
+    def generate(
+        self,
+        prompt,
+        constraint=None,
+        max_tokens=100,
+        temperature=0.8,
+        _metrics=None,
+    ):
+        self.received_constraint = constraint
+        if _metrics is not None:
+            _metrics["tokens_generated"] = self._tokens
+            _metrics["bind_time_s"] = self._bind_time
+            _metrics["valid_token_ids_time_s"] = self._valid_ids_time
+            _metrics["consume_token_time_s"] = self._consume_time
+        return self._output
+
+
+# ---------------------------------------------------------------------------
+# run_constrained tests
+# ---------------------------------------------------------------------------
+
+def test_run_constrained_result_contains_all_required_keys():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert REQUIRED_KEYS.issubset(result.keys())
+
+
+def test_run_constrained_approach_field_is_constrained():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["approach"] == "constrained"
+
+
+def test_run_constrained_passes_a_constraint_to_generate():
+    # The fundamental difference from run_normal and run_retry: generate()
+    # must receive a non-None constraint.
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert decoder.received_constraint is not None
+
+
+def test_run_constrained_passes_a_json_schema_constraint():
+    # Specifically a JSONSchemaConstraint, not an arbitrary object.
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert isinstance(decoder.received_constraint, JSONSchemaConstraint)
+
+
+def test_run_constrained_valid_output_sets_both_flags_true():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "active"}')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["valid_json"] is True
+    assert result["valid_schema"] is True
+
+
+def test_run_constrained_truncated_output_sets_both_flags_false():
+    # Simulates hitting max_tokens before the constraint completes.
+    decoder = ConstrainedFakeDecoder('{"name": "Ada"')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["valid_json"] is False
+    assert result["valid_schema"] is False
+
+
+def test_run_constrained_has_no_retries():
+    decoder = ConstrainedFakeDecoder("bad output")
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["retries"] == 0
+    assert result["exhausted_retries"] is False
+
+
+def test_run_constrained_latency_is_positive():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["latency_s"] > 0
+
+
+def test_run_constrained_tokens_generated_matches_decoder_report():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}', tokens=14)
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["tokens_generated"] == 14
+
+
+def test_run_constrained_timing_fields_propagate_from_metrics():
+    # Non-zero timing values reported by the decoder must appear unchanged
+    # in the result. This confirms the fields are read from _metrics rather
+    # than hardcoded.
+    decoder = ConstrainedFakeDecoder(
+        '{"name": "Ada", "status": "ok"}',
+        bind_time=0.12,
+        valid_ids_time=0.63,
+        consume_time=0.07,
+    )
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["bind_time_s"] == pytest.approx(0.12)
+    assert result["valid_token_ids_time_s"] == pytest.approx(0.63)
+    assert result["consume_token_time_s"] == pytest.approx(0.07)
+
+
+def test_run_constrained_records_run_index_and_seed():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_constrained(TC1, decoder, run_index=2, seed=77)
+    assert result["run_index"] == 2
+    assert result["seed"] == 77

@@ -24,6 +24,7 @@ import jsonschema
 import torch
 
 from benchmark.dataset import Task
+from tcd import JSONSchemaConstraint
 
 
 # ---------------------------------------------------------------------------
@@ -234,4 +235,87 @@ def run_retry(
         "bind_time_s": 0.0,
         "valid_token_ids_time_s": 0.0,
         "consume_token_time_s": 0.0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Approach C — TCD constrained decoding
+# ---------------------------------------------------------------------------
+
+def run_constrained(
+    task: Task,
+    decoder,
+    *,
+    run_index: int,
+    seed: int,
+    max_tokens: int = 100,
+    temperature: float = 0.8,
+) -> dict:
+    """Run Approach C: TCD JSON Schema constrained generation.
+
+    A fresh JSONSchemaConstraint is created from the task schema before each
+    call. Constraint creation (compile_schema + initial parser state) is fast
+    and happens outside the latency timer. The expensive cost — TokenIndex
+    construction over the full vocabulary — happens inside generate() and is
+    captured in bind_time_s.
+
+    _validate() is still applied to the output even though TCD enforces
+    structural validity by construction. The one case where output may be
+    invalid is when max_tokens is reached before the constraint completes,
+    producing a truncated JSON string.
+
+    Parameters
+    ----------
+    task
+        Benchmark task supplying the prompt and schema.
+    decoder
+        Loaded decoder instance.
+    run_index
+        Repetition index recorded in the result for traceability.
+    seed
+        PyTorch random seed applied before generation.
+    max_tokens
+        Maximum new tokens to generate. If the constraint does not complete
+        within this budget, the output will be truncated and invalid.
+    temperature
+        Sampling temperature.
+
+    Returns
+    -------
+    dict
+        One observation. bind_time_s, valid_token_ids_time_s, and
+        consume_token_time_s are populated from decoder._metrics and will
+        be non-zero for a constrained generation.
+    """
+    constraint = JSONSchemaConstraint(task.schema)
+    torch.manual_seed(seed)
+
+    metrics = {}
+    start = time.perf_counter()
+    output = decoder.generate(
+        task.prompt,
+        constraint=constraint,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        _metrics=metrics,
+    )
+    latency_s = time.perf_counter() - start
+
+    valid_json, valid_schema = _validate(output, task.schema)
+
+    return {
+        "approach": "constrained",
+        "task_id": task.task_id,
+        "run_index": run_index,
+        "seed": seed,
+        "output": output,
+        "tokens_generated": metrics["tokens_generated"],
+        "latency_s": latency_s,
+        "valid_json": valid_json,
+        "valid_schema": valid_schema,
+        "retries": 0,
+        "exhausted_retries": False,
+        "bind_time_s": metrics["bind_time_s"],
+        "valid_token_ids_time_s": metrics["valid_token_ids_time_s"],
+        "consume_token_time_s": metrics["consume_token_time_s"],
     }
