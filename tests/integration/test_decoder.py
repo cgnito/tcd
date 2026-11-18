@@ -224,15 +224,18 @@ def test_decoder_stops_at_max_tokens_before_constraint_is_complete(monkeypatch):
         SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
     )
 
+    metrics = {}
     response = Decoder("fake-model").generate(
         "question",
         constraint="yes",
         max_tokens=1,
         temperature=1.0,
+        _metrics=metrics,
     )
 
     assert response == "y"
     assert model.calls == 1
+    assert metrics["finish_reason"] == "max_tokens"
 
 
 def test_metrics_tokens_generated_matches_generation_steps(monkeypatch):
@@ -260,6 +263,7 @@ def test_metrics_tokens_generated_matches_generation_steps(monkeypatch):
 
     assert response == "yes"
     assert metrics["tokens_generated"] == 1
+    assert metrics["finish_reason"] == "constraint_complete"
     assert metrics["bind_time_s"] >= 0.0
     assert metrics["valid_token_ids_time_s"] >= 0.0
     assert metrics["consume_token_time_s"] >= 0.0
@@ -289,9 +293,37 @@ def test_metrics_constraint_timings_are_zero_for_unconstrained_generation(monkey
     )
 
     assert metrics["tokens_generated"] == 3
+    assert metrics["finish_reason"] == "max_tokens"
     assert metrics["bind_time_s"] == 0.0
     assert metrics["valid_token_ids_time_s"] == 0.0
     assert metrics["consume_token_time_s"] == 0.0
+
+
+def test_metrics_finish_reason_is_eos_for_unconstrained_generation(monkeypatch):
+    tokenizer = FakeTokenizer()
+    tokenizer.eos_token_id = 2
+    model = FakeModel(preferred_token_id=2)
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    metrics = {}
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint=None,
+        max_tokens=5,
+        temperature=1.0,
+        _metrics=metrics,
+    )
+
+    assert response == "yes"
+    assert metrics["tokens_generated"] == 1
+    assert metrics["finish_reason"] == "eos"
 
 
 def test_metrics_not_populated_when_argument_is_omitted(monkeypatch):

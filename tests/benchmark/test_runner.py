@@ -1,11 +1,12 @@
 """Tests for benchmark runner strategies."""
 
+import time
+
 import pytest
 
 from benchmark.dataset import TASKS
-from benchmark.runner import _validate, run_normal, run_retry, run_constrained
+from benchmark.runner import _validate, run_constrained, run_normal, run_retry
 from tcd import JSONSchemaConstraint
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture: a simple task with a known schema
@@ -26,9 +27,10 @@ TC1 = next(t for t in TASKS if t.task_id == "TC-1")
 # ---------------------------------------------------------------------------
 
 class FakeDecoder:
-    def __init__(self, output: str, tokens: int = 5):
+    def __init__(self, output: str, tokens: int = 5, finish_reason: str = "eos"):
         self._output = output
         self._tokens = tokens
+        self._finish_reason = finish_reason
 
     def generate(
         self,
@@ -40,6 +42,7 @@ class FakeDecoder:
     ):
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
+            _metrics["finish_reason"] = self._finish_reason
             _metrics["bind_time_s"] = 0.0
             _metrics["valid_token_ids_time_s"] = 0.0
             _metrics["consume_token_time_s"] = 0.0
@@ -97,7 +100,8 @@ def test_validate_schema_invalid_is_not_false_false():
 
 REQUIRED_KEYS = {
     "approach", "task_id", "run_index", "seed", "output",
-    "tokens_generated", "latency_s", "valid_json", "valid_schema",
+    "tokens_generated", "latency_s", "validation_time_s", "e2e_latency_s",
+    "valid_json", "valid_schema", "finish_reason", "truncated",
     "retries", "exhausted_retries",
     "bind_time_s", "valid_token_ids_time_s", "consume_token_time_s",
 }
@@ -144,6 +148,23 @@ def test_run_normal_broken_json_sets_both_flags_false():
     assert result["valid_schema"] is False
 
 
+def test_run_normal_malformed_json_is_not_marked_truncated():
+    # Malformed output that stopped for another reason is not truncation.
+    decoder = FakeDecoder("not json", finish_reason="eos")
+    result = run_normal(TC1, decoder, run_index=0, seed=42)
+    assert result["valid_json"] is False
+    assert result["finish_reason"] == "eos"
+    assert result["truncated"] is False
+
+
+def test_run_normal_max_tokens_truncation_is_flagged():
+    decoder = FakeDecoder('{"name": "Ada"', finish_reason="max_tokens")
+    result = run_normal(TC1, decoder, run_index=0, seed=42)
+    assert result["valid_json"] is False
+    assert result["finish_reason"] == "max_tokens"
+    assert result["truncated"] is True
+
+
 def test_run_normal_has_no_retries():
     decoder = FakeDecoder("not json")  # even on failure, no retry
     result = run_normal(TC1, decoder, run_index=0, seed=42)
@@ -155,6 +176,15 @@ def test_run_normal_latency_is_positive():
     decoder = FakeDecoder('{"name": "Ada", "status": "ok"}')
     result = run_normal(TC1, decoder, run_index=0, seed=42)
     assert result["latency_s"] > 0
+
+
+def test_run_normal_e2e_includes_generation_and_validation():
+    decoder = FakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_normal(TC1, decoder, run_index=0, seed=42)
+    assert result["validation_time_s"] >= 0.0
+    assert result["e2e_latency_s"] >= (
+        result["latency_s"] + result["validation_time_s"]
+    )
 
 
 def test_run_normal_tokens_generated_matches_decoder_report():
@@ -189,9 +219,15 @@ def test_run_normal_output_field_contains_raw_generation():
 # ---------------------------------------------------------------------------
 
 class MultiOutputFakeDecoder:
-    def __init__(self, outputs: list[str], tokens_per_attempt: int = 5):
+    def __init__(
+        self,
+        outputs: list[str],
+        tokens_per_attempt: int = 5,
+        finish_reasons: list[str] | None = None,
+    ):
         self._outputs = iter(outputs)
         self._tokens = tokens_per_attempt
+        self._finish_reasons = iter(finish_reasons or ["eos"] * len(outputs))
 
     def generate(
         self,
@@ -203,6 +239,7 @@ class MultiOutputFakeDecoder:
     ):
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
+            _metrics["finish_reason"] = next(self._finish_reasons)
             _metrics["bind_time_s"] = 0.0
             _metrics["valid_token_ids_time_s"] = 0.0
             _metrics["consume_token_time_s"] = 0.0
@@ -285,6 +322,28 @@ def test_run_retry_latency_is_positive():
     assert result["latency_s"] > 0
 
 
+def test_run_retry_validation_time_accumulates_across_attempts(monkeypatch):
+    calls = []
+
+    def slow_validate(output, schema):
+        calls.append(output)
+        time.sleep(0.005)
+        return _validate(output, schema)
+
+    monkeypatch.setattr("benchmark.runner._validate", slow_validate)
+
+    invalid = "not json"
+    valid = '{"name": "Ada", "status": "ok"}'
+    decoder = MultiOutputFakeDecoder([invalid, valid])
+    result = run_retry(TC1, decoder, run_index=0, seed=42)
+
+    assert len(calls) == 2
+    assert result["validation_time_s"] >= 0.01
+    assert result["e2e_latency_s"] >= (
+        result["latency_s"] + result["validation_time_s"]
+    )
+
+
 def test_run_retry_result_contains_all_required_keys():
     valid = '{"name": "Ada", "status": "ok"}'
     decoder = MultiOutputFakeDecoder([valid])
@@ -306,6 +365,28 @@ def test_run_retry_constraint_timings_are_always_zero():
     assert result["bind_time_s"] == 0.0
     assert result["valid_token_ids_time_s"] == 0.0
     assert result["consume_token_time_s"] == 0.0
+
+
+def test_run_retry_truncated_when_final_attempt_hits_max_tokens():
+    decoder = MultiOutputFakeDecoder(
+        ["bad"] * 4,
+        finish_reasons=["max_tokens"] * 4,
+    )
+    result = run_retry(TC1, decoder, run_index=0, seed=42, max_retries=3)
+    assert result["finish_reason"] == "max_tokens"
+    assert result["truncated"] is True
+
+
+def test_run_retry_truncation_reflects_the_final_attempt():
+    invalid = "not json"
+    valid = '{"name": "Ada", "status": "ok"}'
+    decoder = MultiOutputFakeDecoder(
+        [invalid, valid],
+        finish_reasons=["max_tokens", "eos"],
+    )
+    result = run_retry(TC1, decoder, run_index=0, seed=42)
+    assert result["finish_reason"] == "eos"
+    assert result["truncated"] is False
 
 
 def test_run_retry_valid_json_false_and_schema_false_when_exhausted():
@@ -336,12 +417,14 @@ class ConstrainedFakeDecoder:
         bind_time: float = 0.1,
         valid_ids_time: float = 0.5,
         consume_time: float = 0.05,
+        finish_reason: str = "constraint_complete",
     ):
         self._output = output
         self._tokens = tokens
         self._bind_time = bind_time
         self._valid_ids_time = valid_ids_time
         self._consume_time = consume_time
+        self._finish_reason = finish_reason
         self.received_constraint = None
 
     def generate(
@@ -355,6 +438,7 @@ class ConstrainedFakeDecoder:
         self.received_constraint = constraint
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
+            _metrics["finish_reason"] = self._finish_reason
             _metrics["bind_time_s"] = self._bind_time
             _metrics["valid_token_ids_time_s"] = self._valid_ids_time
             _metrics["consume_token_time_s"] = self._consume_time
@@ -397,14 +481,21 @@ def test_run_constrained_valid_output_sets_both_flags_true():
     result = run_constrained(TC1, decoder, run_index=0, seed=42)
     assert result["valid_json"] is True
     assert result["valid_schema"] is True
+    assert result["finish_reason"] == "constraint_complete"
+    assert result["truncated"] is False
 
 
 def test_run_constrained_truncated_output_sets_both_flags_false():
     # Simulates hitting max_tokens before the constraint completes.
-    decoder = ConstrainedFakeDecoder('{"name": "Ada"')
+    decoder = ConstrainedFakeDecoder(
+        '{"name": "Ada"',
+        finish_reason="max_tokens",
+    )
     result = run_constrained(TC1, decoder, run_index=0, seed=42)
     assert result["valid_json"] is False
     assert result["valid_schema"] is False
+    assert result["finish_reason"] == "max_tokens"
+    assert result["truncated"] is True
 
 
 def test_run_constrained_has_no_retries():
@@ -418,6 +509,15 @@ def test_run_constrained_latency_is_positive():
     decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
     result = run_constrained(TC1, decoder, run_index=0, seed=42)
     assert result["latency_s"] > 0
+
+
+def test_run_constrained_e2e_includes_generation_and_validation():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    result = run_constrained(TC1, decoder, run_index=0, seed=42)
+    assert result["validation_time_s"] >= 0.0
+    assert result["e2e_latency_s"] >= (
+        result["latency_s"] + result["validation_time_s"]
+    )
 
 
 def test_run_constrained_tokens_generated_matches_decoder_report():

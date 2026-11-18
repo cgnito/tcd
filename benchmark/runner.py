@@ -9,8 +9,21 @@ is judged by identical code regardless of how the output was produced.
 Timing boundaries
 -----------------
 latency_s
-    Measured externally: perf_counter() before and after decoder.generate().
-    Includes everything the caller experiences.
+    Generation only: perf_counter() immediately before and after
+    decoder.generate(). For retry, this is the sum across all attempts.
+    For constrained generation it includes constraint.bind(), because that
+    happens inside generate(), but excludes constraint construction.
+
+validation_time_s
+    Time spent inside _validate(). For retry, this is the sum across all
+    attempts. Excluded from latency_s.
+
+e2e_latency_s
+    The complete strategy operation: setup/seeding, constraint construction
+    (Approach C only), every generation attempt, every validation, and retry
+    loop overhead. This is intentionally larger than
+    latency_s + validation_time_s because it also includes setup and control
+    flow.
 
 bind_time_s, valid_token_ids_time_s, consume_token_time_s
     Measured internally by decoder.generate() via the _metrics dict.
@@ -25,7 +38,6 @@ import torch
 
 from benchmark.dataset import Task
 from tcd import JSONSchemaConstraint
-
 
 # ---------------------------------------------------------------------------
 # Shared validation helper
@@ -111,6 +123,7 @@ def run_normal(
     dict
         One observation with all measurement fields populated.
     """
+    e2e_start = time.perf_counter()
     torch.manual_seed(seed)
 
     metrics = {}
@@ -124,7 +137,11 @@ def run_normal(
     )
     latency_s = time.perf_counter() - start
 
+    validation_start = time.perf_counter()
     valid_json, valid_schema = _validate(output, task.schema)
+    validation_time_s = time.perf_counter() - validation_start
+    e2e_latency_s = time.perf_counter() - e2e_start
+    finish_reason = metrics["finish_reason"]
 
     return {
         "approach": "normal",
@@ -134,8 +151,12 @@ def run_normal(
         "output": output,
         "tokens_generated": metrics["tokens_generated"],
         "latency_s": latency_s,
+        "validation_time_s": validation_time_s,
+        "e2e_latency_s": e2e_latency_s,
         "valid_json": valid_json,
         "valid_schema": valid_schema,
+        "finish_reason": finish_reason,
+        "truncated": finish_reason == "max_tokens",
         "retries": 0,
         "exhausted_retries": False,
         "bind_time_s": metrics["bind_time_s"],
@@ -191,14 +212,18 @@ def run_retry(
     dict
         One observation. ``retries`` counts attempts after the first.
         ``exhausted_retries`` is True when all attempts failed.
-        ``tokens_generated`` and ``latency_s`` are totals across all
-        attempts.
+        ``tokens_generated``, ``latency_s``, and ``validation_time_s`` are
+        totals across all attempts. ``e2e_latency_s`` spans the entire
+        strategy call, including setup and loop overhead.
     """
+    e2e_start = time.perf_counter()
     total_tokens = 0
     total_latency_s = 0.0
+    total_validation_s = 0.0
     output = ""
     valid_json = False
     valid_schema = False
+    finish_reason = "max_tokens"
     attempt = 0
 
     for attempt in range(max_retries + 1):
@@ -215,10 +240,16 @@ def run_retry(
         )
         total_latency_s += time.perf_counter() - start
         total_tokens += metrics["tokens_generated"]
+        finish_reason = metrics["finish_reason"]
 
+        validation_start = time.perf_counter()
         valid_json, valid_schema = _validate(output, task.schema)
+        total_validation_s += time.perf_counter() - validation_start
+
         if valid_json and valid_schema:
             break
+
+    e2e_latency_s = time.perf_counter() - e2e_start
 
     return {
         "approach": "retry",
@@ -228,8 +259,12 @@ def run_retry(
         "output": output,
         "tokens_generated": total_tokens,
         "latency_s": total_latency_s,
+        "validation_time_s": total_validation_s,
+        "e2e_latency_s": e2e_latency_s,
         "valid_json": valid_json,
         "valid_schema": valid_schema,
+        "finish_reason": finish_reason,
+        "truncated": finish_reason == "max_tokens",
         "retries": attempt,
         "exhausted_retries": not (valid_json and valid_schema),
         "bind_time_s": 0.0,
@@ -285,8 +320,10 @@ def run_constrained(
     dict
         One observation. bind_time_s, valid_token_ids_time_s, and
         consume_token_time_s are populated from decoder._metrics and will
-        be non-zero for a constrained generation.
+        be non-zero for a constrained generation. ``e2e_latency_s`` includes
+        constraint construction, generation, and validation.
     """
+    e2e_start = time.perf_counter()
     constraint = JSONSchemaConstraint(task.schema)
     torch.manual_seed(seed)
 
@@ -301,7 +338,11 @@ def run_constrained(
     )
     latency_s = time.perf_counter() - start
 
+    validation_start = time.perf_counter()
     valid_json, valid_schema = _validate(output, task.schema)
+    validation_time_s = time.perf_counter() - validation_start
+    e2e_latency_s = time.perf_counter() - e2e_start
+    finish_reason = metrics["finish_reason"]
 
     return {
         "approach": "constrained",
@@ -311,8 +352,12 @@ def run_constrained(
         "output": output,
         "tokens_generated": metrics["tokens_generated"],
         "latency_s": latency_s,
+        "validation_time_s": validation_time_s,
+        "e2e_latency_s": e2e_latency_s,
         "valid_json": valid_json,
         "valid_schema": valid_schema,
+        "finish_reason": finish_reason,
+        "truncated": finish_reason == "max_tokens",
         "retries": 0,
         "exhausted_retries": False,
         "bind_time_s": metrics["bind_time_s"],

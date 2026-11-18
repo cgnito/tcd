@@ -1,7 +1,9 @@
 import time
+
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from .constraints import Constraint, RegexConstraint
 
 
@@ -41,9 +43,11 @@ class Decoder:
             When ``True``, print each token ID and its decoded text.
         _metrics
             Optional dict populated with timing data before returning. Keys:
-            ``tokens_generated`` (int), ``bind_time_s`` (float),
-            ``valid_token_ids_time_s`` (float), ``consume_token_time_s``
-            (float). The last three are ``0.0`` for unconstrained generation.
+            ``tokens_generated`` (int), ``finish_reason`` (str),
+            ``bind_time_s`` (float), ``valid_token_ids_time_s`` (float),
+            ``consume_token_time_s`` (float). ``finish_reason`` is one of
+            ``"constraint_complete"``, ``"eos"``, or ``"max_tokens"``.
+            The last three are ``0.0`` for unconstrained generation.
             ``bind_time_s`` reflects a cold-start cost: in this benchmark a
             new constraint is created per call, so vocabulary indexing is paid
             every time. Pass an empty dict to collect metrics; omit for normal
@@ -63,6 +67,7 @@ class Decoder:
 
         response = ""
         tokens_generated = 0
+        finish_reason = "max_tokens"
         bind_time_s = 0.0
         valid_token_ids_time_s = 0.0
         consume_token_time_s = 0.0
@@ -105,10 +110,18 @@ class Decoder:
                     _t = time.perf_counter()
                     constraint.consume_token(next_token_id)
                     consume_token_time_s += time.perf_counter() - _t
-                    if constraint.is_complete() or step == max_tokens - 1:
+                    if constraint.is_complete():
+                        finish_reason = "constraint_complete"
+                        break
+                    if step == max_tokens - 1:
+                        finish_reason = "max_tokens"
                         break
                 else:
-                    if next_token_id == self.tokenizer.eos_token_id or step == max_tokens - 1:
+                    if next_token_id == self.tokenizer.eos_token_id:
+                        finish_reason = "eos"
+                        break
+                    if step == max_tokens - 1:
+                        finish_reason = "max_tokens"
                         break
 
                 next_input = torch.tensor([[next_token_id]])
@@ -120,6 +133,7 @@ class Decoder:
 
         if _metrics is not None:
             _metrics["tokens_generated"] = tokens_generated
+            _metrics["finish_reason"] = finish_reason
             _metrics["bind_time_s"] = bind_time_s
             _metrics["valid_token_ids_time_s"] = valid_token_ids_time_s
             _metrics["consume_token_time_s"] = consume_token_time_s
