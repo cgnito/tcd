@@ -12,3 +12,7 @@ wheels/
 AGENTS.md
 .ruff_cache/
 tdd_plan.md
+
+# Benchmark results (keep the directory, ignore generated outputs)
+benchmark/results/*
+!benchmark/results/.gitkeep
