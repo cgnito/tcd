@@ -321,8 +321,62 @@ def test_metrics_finish_reason_is_eos_for_unconstrained_generation(monkeypatch):
         _metrics=metrics,
     )
 
-    assert response == "yes"
+    assert response == ""
     assert metrics["tokens_generated"] == 1
+    assert metrics["finish_reason"] == "eos"
+
+
+def test_decoder_stops_on_any_generation_config_eos_id(monkeypatch):
+    tokenizer = FakeTokenizer()
+    model = FakeModel(preferred_token_id=3)
+    model.generation_config = SimpleNamespace(eos_token_id=[2, 3])
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    metrics = {}
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint=None,
+        max_tokens=5,
+        temperature=1.0,
+        _metrics=metrics,
+    )
+
+    assert response == ""
+    assert metrics["tokens_generated"] == 1
+    assert metrics["finish_reason"] == "eos"
+
+
+def test_decoder_preserves_content_before_eos(monkeypatch):
+    tokenizer = FakeTokenizer()
+    tokenizer.eos_token_id = 2
+    model = ScriptedModel([0, 2])
+    monkeypatch.setattr(
+        "tcd.decoder.AutoTokenizer",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: tokenizer),
+    )
+    monkeypatch.setattr(
+        "tcd.decoder.AutoModelForCausalLM",
+        SimpleNamespace(from_pretrained=lambda *args, **kwargs: model),
+    )
+
+    metrics = {}
+    response = Decoder("fake-model").generate(
+        "question",
+        constraint=None,
+        max_tokens=5,
+        temperature=1.0,
+        _metrics=metrics,
+    )
+
+    assert response == "y"
+    assert metrics["tokens_generated"] == 2
     assert metrics["finish_reason"] == "eos"
 
 

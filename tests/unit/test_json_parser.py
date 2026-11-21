@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import pytest
 
 from tcd.json_parser import JsonParserState, compile_schema
@@ -85,6 +87,41 @@ def test_candidate_validation_does_not_mutate_parser_state():
     state.consume("e")
 
     assert state.is_complete()
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ['"hel', '{"name": "Al', '{"name": ', "[1, 2, ", "tru", "-"],
+)
+def test_fast_candidate_checks_match_deepcopy_reference(prefix):
+    """The optimized clone/fast path must agree with a full deepcopy parse."""
+    state = JsonParserState()
+    state.consume(prefix)
+
+    candidates = [
+        "a",
+        "a b",
+        'a"',
+        'a\\"b',
+        "\n",
+        "\\u0041",
+        "1",
+        "true",
+        "}",
+        "]",
+        " ",
+    ]
+
+    for text in candidates:
+        reference = deepcopy(state)
+        try:
+            for char in text:
+                reference._consume_char(char)
+            expected = True
+        except ValueError:
+            expected = False
+
+        assert state.can_consume(text) is expected, text
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,5 @@
 from tcd import RegexConstraint
+from tcd.constraints.token_index import TokenIndex
 
 
 class FakeTokenizer:
@@ -56,3 +57,12 @@ def test_constraint_decodes_vocabulary_once_and_reuses_cached_text():
     constraint.valid_token_ids()
 
     assert tokenizer.decode_calls == 3
+
+
+def test_token_index_excludes_special_tokens():
+    tokenizer = FakeTokenizer({0: "a", 1: "b", 2: "<special>"})
+    tokenizer.all_special_ids = [2]
+
+    index = TokenIndex(tokenizer)
+
+    assert [token_id for token_id, _ in index.entries(None)] == [0, 1]

@@ -1,10 +1,8 @@
 """Parse JSON incrementally with a stack of structural contexts."""
 
-from copy import deepcopy
 import json
 
 from .schema import ArraySchema, ObjectSchema, PrimitiveSchema, SchemaNode
-
 
 _HEX_DIGITS = set("0123456789abcdefABCDEF")
 _STRING_ESCAPES = set('"\\/bfnrt')
@@ -30,6 +28,35 @@ class JsonParserState:
         self._literal_index = 0
         self._unicode_digits = 0
 
+    def _clone(self) -> "JsonParserState":
+        """Return an independent copy of this parser state.
+
+        Schema nodes are immutable and can be shared. The stack is the only
+        mutable container that can differ after consuming text, so copying
+        each frame and its ``seen`` set is enough. This is much cheaper than
+        ``deepcopy``, which would also copy the whole compiled schema for
+        every candidate token.
+        """
+        clone = object.__new__(JsonParserState)
+        clone._schema = self._schema
+        clone._stack = []
+        for frame in self._stack:
+            copied = dict(frame)
+            if "seen" in copied:
+                copied["seen"] = set(copied["seen"])
+            clone._stack.append(copied)
+        clone._root_complete = self._root_complete
+        clone._active_kind = self._active_kind
+        clone._string_buffer = self._string_buffer
+        clone._pending_schema = self._pending_schema
+        clone._mode = self._mode
+        clone._number_kind = self._number_kind
+        clone._number_buffer = self._number_buffer
+        clone._literal = self._literal
+        clone._literal_index = self._literal_index
+        clone._unicode_digits = self._unicode_digits
+        return clone
+
     def consume(self, text: str) -> None:
         """Consume text atomically or raise ``ValueError``.
 
@@ -43,7 +70,7 @@ class JsonParserState:
         ValueError
             If any character cannot continue the JSON document.
         """
-        candidate = deepcopy(self)
+        candidate = self._clone()
         for char in text:
             candidate._consume_char(char)
         self.__dict__.update(candidate.__dict__)
@@ -61,7 +88,16 @@ class JsonParserState:
         bool
             ``True`` when every character is valid from the current state.
         """
-        candidate = deepcopy(self)
+        if (
+            self._active_kind is not None
+            and self._mode == "string"
+            and not any(char in '"\\' or ord(char) < 0x20 for char in text)
+        ):
+            # Ordinary string content only appends to the buffer. It cannot
+            # switch mode or complete a value, so no parser copy is needed.
+            return True
+
+        candidate = self._clone()
         try:
             for char in text:
                 candidate._consume_char(char)

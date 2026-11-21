@@ -15,6 +15,22 @@ class Decoder:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
         self.model.to("cpu")
 
+    def _eos_token_ids(self) -> set[int]:
+        """Return every EOS ID configured by the model or tokenizer."""
+        eos_ids: set[int] = set()
+
+        generation_config = getattr(self.model, "generation_config", None)
+        configured = getattr(generation_config, "eos_token_id", None)
+        if isinstance(configured, int):
+            eos_ids.add(configured)
+        elif configured is not None:
+            eos_ids.update(configured)
+
+        tokenizer_eos = getattr(self.tokenizer, "eos_token_id", None)
+        if isinstance(tokenizer_eos, int):
+            eos_ids.add(tokenizer_eos)
+
+        return eos_ids
 
     def generate(
         self,
@@ -79,6 +95,8 @@ class Decoder:
             constraint.bind(self.tokenizer)
             bind_time_s = time.perf_counter() - _t
 
+        eos_token_ids = self._eos_token_ids()
+
         with torch.inference_mode():
             inputs = self.tokenizer(prompt, return_tensors="pt")
             outputs = self.model(**inputs, use_cache=True)
@@ -99,12 +117,16 @@ class Decoder:
 
                 probs = F.softmax(next_logits / temperature, dim=-1)
                 next_token_id = torch.multinomial(probs, num_samples=1).item()
+                tokens_generated += 1
+
+                if constraint is None and next_token_id in eos_token_ids:
+                    finish_reason = "eos"
+                    break
 
                 next_token = self.tokenizer.decode([next_token_id])
                 if verbose:
                     print(next_token_id, repr(next_token))
                 response += next_token
-                tokens_generated += 1
 
                 if constraint is not None:
                     _t = time.perf_counter()
@@ -117,9 +139,6 @@ class Decoder:
                         finish_reason = "max_tokens"
                         break
                 else:
-                    if next_token_id == self.tokenizer.eos_token_id:
-                        finish_reason = "eos"
-                        break
                     if step == max_tokens - 1:
                         finish_reason = "max_tokens"
                         break

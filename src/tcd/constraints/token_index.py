@@ -7,7 +7,10 @@ class TokenIndex:
     def __init__(self, tokenizer):
         self._text_by_id: dict[int, str] = {}
         self._entries_by_first_symbol: dict[str, list[tuple[int, str]]] = {}
+        special_token_ids = set(getattr(tokenizer, "all_special_ids", ()) or ())
         for token_id in tokenizer.get_vocab().values():
+            if token_id in special_token_ids:
+                continue
             text = tokenizer.decode(
                 [token_id],
                 skip_special_tokens=False,
