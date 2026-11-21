@@ -3,9 +3,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from benchmark.dataset import TASKS
 from benchmark.run_benchmark import (
     _build_metadata,
+    _render_chat_prompt,
     _result_paths,
     _run_strategy,
     _seed_for_run,
@@ -15,7 +18,37 @@ from benchmark.run_benchmark import (
 TC1 = next(t for t in TASKS if t.task_id == "TC-1")
 
 
+class FakeTokenizer:
+    def __init__(self):
+        self.chat_template = "fake-template"
+        self.calls = []
+
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        tokenize,
+        add_generation_prompt,
+    ):
+        self.calls.append(
+            {
+                "messages": messages,
+                "tokenize": tokenize,
+                "add_generation_prompt": add_generation_prompt,
+            }
+        )
+        return f"CHAT:{messages[0]['content']}"
+
+
+class NoTemplateTokenizer:
+    chat_template = None
+
+
 class FakeDecoder:
+    def __init__(self):
+        self.tokenizer = FakeTokenizer()
+        self.prompts = []
+
     def generate(
         self,
         prompt,
@@ -24,6 +57,7 @@ class FakeDecoder:
         temperature=0.8,
         _metrics=None,
     ):
+        self.prompts.append(prompt)
         if _metrics is not None:
             _metrics["tokens_generated"] = 3
             _metrics["finish_reason"] = (
@@ -53,6 +87,26 @@ def test_result_paths_use_run_id():
     assert observations_path == Path("/tmp/abc_observations.jsonl")
 
 
+def test_render_chat_prompt_uses_one_user_message_and_generation_prompt():
+    tokenizer = FakeTokenizer()
+
+    rendered = _render_chat_prompt(tokenizer, "hello")
+
+    assert rendered == "CHAT:hello"
+    assert tokenizer.calls == [
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "tokenize": False,
+            "add_generation_prompt": True,
+        }
+    ]
+
+
+def test_render_chat_prompt_requires_a_chat_template():
+    with pytest.raises(ValueError, match="chat template"):
+        _render_chat_prompt(NoTemplateTokenizer(), "hello")
+
+
 def test_metadata_contains_configuration_and_environment():
     metadata = _build_metadata(
         "run-1",
@@ -63,10 +117,13 @@ def test_metadata_contains_configuration_and_environment():
         temperature=0.5,
         max_retries=1,
         seed_base=7,
+        chat_template=True,
+        rendered_prompts={"TC-1": "CHAT:hello"},
     )
 
     assert metadata["run_id"] == "run-1"
     assert metadata["model_name"] == "fake-model"
+    assert metadata["chat_template"] is True
     assert metadata["generation"] == {
         "runs_per_task": 2,
         "max_tokens": 10,
@@ -76,15 +133,19 @@ def test_metadata_contains_configuration_and_environment():
         "seed_spacing": 100,
     }
     assert metadata["tasks"][0]["task_id"] == "TC-1"
+    assert metadata["tasks"][0]["prompt"] == TC1.prompt
+    assert metadata["tasks"][0]["rendered_prompt"] == "CHAT:hello"
     assert metadata["tasks"][0]["schema"] == TC1.schema
     assert "environment" in metadata
 
 
 def test_run_strategy_adds_error_none_on_success():
+    decoder = FakeDecoder()
     record = _run_strategy(
         "normal",
         TC1,
-        FakeDecoder(),
+        decoder,
+        prompt="CUSTOM",
         run_index=0,
         seed=0,
         max_tokens=10,
@@ -95,6 +156,7 @@ def test_run_strategy_adds_error_none_on_success():
     assert record["approach"] == "normal"
     assert record["error"] is None
     assert record["valid_schema"] is True
+    assert decoder.prompts == ["CUSTOM"]
 
 
 def test_run_strategy_converts_exception_to_error_record():
@@ -102,6 +164,7 @@ def test_run_strategy_converts_exception_to_error_record():
         "normal",
         TC1,
         BrokenDecoder(),
+        prompt="CUSTOM",
         run_index=0,
         seed=0,
         max_tokens=10,
@@ -151,4 +214,43 @@ def test_run_experiment_writes_metadata_and_jsonl(tmp_path):
 
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["model_name"] == "fake-model"
+    assert metadata["chat_template"] is True
     assert metadata["generation"]["runs_per_task"] == 2
+
+
+def test_run_experiment_uses_same_chat_prompt_for_all_approaches(tmp_path):
+    decoder = FakeDecoder()
+
+    metadata_path, _ = run_experiment(
+        decoder,
+        tasks=[TC1],
+        runs_per_task=1,
+        results_dir=tmp_path,
+        model_name="fake-model",
+    )
+
+    expected = f"CHAT:{TC1.prompt}"
+    assert set(decoder.prompts) == {expected}
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["chat_template"] is True
+    assert metadata["tasks"][0]["rendered_prompt"] == expected
+
+
+def test_run_experiment_can_use_raw_prompts(tmp_path):
+    decoder = FakeDecoder()
+
+    metadata_path, _ = run_experiment(
+        decoder,
+        tasks=[TC1],
+        runs_per_task=1,
+        results_dir=tmp_path,
+        model_name="fake-model",
+        use_chat_template=False,
+    )
+
+    assert set(decoder.prompts) == {TC1.prompt}
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["chat_template"] is False
+    assert metadata["tasks"][0]["rendered_prompt"] == TC1.prompt

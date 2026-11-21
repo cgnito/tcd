@@ -91,6 +91,7 @@ def run_normal(
     task: Task,
     decoder,
     *,
+    prompt: str | None = None,
     run_index: int,
     seed: int,
     max_tokens: int = 100,
@@ -108,6 +109,8 @@ def run_normal(
     decoder
         Loaded decoder instance. Must expose a generate() method with the
         same signature as tcd.Decoder.generate().
+    prompt
+        Prompt to send to the decoder. Defaults to ``task.prompt``.
     run_index
         Repetition index recorded in the result for traceability.
     seed
@@ -123,13 +126,14 @@ def run_normal(
     dict
         One observation with all measurement fields populated.
     """
+    prompt = task.prompt if prompt is None else prompt
     e2e_start = time.perf_counter()
     torch.manual_seed(seed)
 
     metrics = {}
     start = time.perf_counter()
     output = decoder.generate(
-        task.prompt,
+        prompt,
         constraint=None,
         max_tokens=max_tokens,
         temperature=temperature,
@@ -173,6 +177,7 @@ def run_retry(
     task: Task,
     decoder,
     *,
+    prompt: str | None = None,
     run_index: int,
     seed: int,
     max_retries: int = 3,
@@ -195,6 +200,8 @@ def run_retry(
         Benchmark task supplying the prompt and schema.
     decoder
         Loaded decoder instance.
+    prompt
+        Prompt to send to the decoder. Defaults to ``task.prompt``.
     run_index
         Repetition index recorded in the result for traceability.
     seed
@@ -216,6 +223,7 @@ def run_retry(
         totals across all attempts. ``e2e_latency_s`` spans the entire
         strategy call, including setup and loop overhead.
     """
+    prompt = task.prompt if prompt is None else prompt
     e2e_start = time.perf_counter()
     total_tokens = 0
     total_latency_s = 0.0
@@ -232,7 +240,7 @@ def run_retry(
         metrics = {}
         start = time.perf_counter()
         output = decoder.generate(
-            task.prompt,
+            prompt,
             constraint=None,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -281,6 +289,7 @@ def run_constrained(
     task: Task,
     decoder,
     *,
+    prompt: str | None = None,
     run_index: int,
     seed: int,
     max_tokens: int = 100,
@@ -305,6 +314,8 @@ def run_constrained(
         Benchmark task supplying the prompt and schema.
     decoder
         Loaded decoder instance.
+    prompt
+        Prompt to send to the decoder. Defaults to ``task.prompt``.
     run_index
         Repetition index recorded in the result for traceability.
     seed
@@ -323,6 +334,7 @@ def run_constrained(
         be non-zero for a constrained generation. ``e2e_latency_s`` includes
         constraint construction, generation, and validation.
     """
+    prompt = task.prompt if prompt is None else prompt
     e2e_start = time.perf_counter()
     constraint = JSONSchemaConstraint(task.schema)
     torch.manual_seed(seed)
@@ -330,7 +342,7 @@ def run_constrained(
     metrics = {}
     start = time.perf_counter()
     output = decoder.generate(
-        task.prompt,
+        prompt,
         constraint=constraint,
         max_tokens=max_tokens,
         temperature=temperature,

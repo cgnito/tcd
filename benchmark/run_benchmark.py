@@ -53,6 +53,17 @@ def _seed_for_run(run_index: int, seed_base: int = SEED_BASE) -> int:
     return seed_base + run_index * 100
 
 
+def _render_chat_prompt(tokenizer, prompt: str) -> str:
+    """Render one user message using the tokenizer's chat template."""
+    if getattr(tokenizer, "chat_template", None) is None:
+        raise ValueError("tokenizer does not define a chat template")
+    return tokenizer.apply_chat_template(
+        [{"role": "user", "content": prompt}],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+
+
 def _make_run_id() -> str:
     """Return a UTC timestamp suitable for unique result filenames."""
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
@@ -122,12 +133,16 @@ def _build_metadata(
     temperature: float,
     max_retries: int,
     seed_base: int,
+    chat_template: bool = False,
+    rendered_prompts: dict[str, str] | None = None,
 ) -> dict:
     """Build the metadata document written next to the observations."""
+    rendered_prompts = rendered_prompts or {}
     return {
         "run_id": run_id,
         "timestamp_utc": datetime.now(UTC).isoformat(),
         "model_name": model_name,
+        "chat_template": chat_template,
         "generation": {
             "runs_per_task": runs_per_task,
             "max_tokens": max_tokens,
@@ -141,6 +156,10 @@ def _build_metadata(
                 "task_id": task.task_id,
                 "description": task.description,
                 "prompt": task.prompt,
+                "rendered_prompt": rendered_prompts.get(
+                    task.task_id,
+                    task.prompt,
+                ),
                 "schema": task.schema,
             }
             for task in tasks
@@ -194,6 +213,7 @@ def _run_strategy(
     task: Task,
     decoder,
     *,
+    prompt: str,
     run_index: int,
     seed: int,
     max_tokens: int,
@@ -209,6 +229,7 @@ def _run_strategy(
             result = run_normal(
                 task,
                 decoder,
+                prompt=prompt,
                 run_index=run_index,
                 seed=seed,
                 max_tokens=max_tokens,
@@ -218,6 +239,7 @@ def _run_strategy(
             result = run_retry(
                 task,
                 decoder,
+                prompt=prompt,
                 run_index=run_index,
                 seed=seed,
                 max_retries=max_retries,
@@ -228,6 +250,7 @@ def _run_strategy(
             result = run_constrained(
                 task,
                 decoder,
+                prompt=prompt,
                 run_index=run_index,
                 seed=seed,
                 max_tokens=max_tokens,
@@ -248,6 +271,7 @@ def _warm_up(
     decoder: Decoder,
     task: Task,
     *,
+    prompt: str,
     max_tokens: int,
     temperature: float,
 ) -> None:
@@ -262,7 +286,7 @@ def _warm_up(
 
     torch.manual_seed(SEED_BASE)
     decoder.generate(
-        task.prompt,
+        prompt,
         constraint=None,
         max_tokens=warmup_tokens,
         temperature=temperature,
@@ -270,7 +294,7 @@ def _warm_up(
 
     torch.manual_seed(SEED_BASE)
     decoder.generate(
-        task.prompt,
+        prompt,
         constraint=JSONSchemaConstraint(task.schema),
         max_tokens=warmup_tokens,
         temperature=temperature,
@@ -321,6 +345,7 @@ def run_experiment(
     seed_base: int = SEED_BASE,
     model_name: str = MODEL_NAME,
     results_dir: Path = RESULTS_DIR,
+    use_chat_template: bool = True,
 ) -> tuple[Path, Path]:
     """Run the full benchmark and return ``(metadata_path, observations_path)``.
 
@@ -331,6 +356,14 @@ def run_experiment(
         tasks = TASKS
     if not tasks:
         raise ValueError("tasks must not be empty")
+
+    if use_chat_template:
+        prompts = {
+            task.task_id: _render_chat_prompt(decoder.tokenizer, task.prompt)
+            for task in tasks
+        }
+    else:
+        prompts = {task.task_id: task.prompt for task in tasks}
 
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -346,6 +379,8 @@ def run_experiment(
         temperature=temperature,
         max_retries=max_retries,
         seed_base=seed_base,
+        chat_template=use_chat_template,
+        rendered_prompts=prompts,
     )
     metadata_path.write_text(
         json.dumps(metadata, indent=2) + "\n",
@@ -360,10 +395,12 @@ def run_experiment(
         f"Configuration: {runs_per_task} runs/task, max_tokens={max_tokens}, "
         f"temperature={temperature}, max_retries={max_retries}"
     )
+    print(f"Prompt format: {'chat template' if use_chat_template else 'raw'}")
     print("\nWarming up...")
     _warm_up(
         decoder,
         tasks[0],
+        prompt=prompts[tasks[0].task_id],
         max_tokens=max_tokens,
         temperature=temperature,
     )
@@ -382,6 +419,7 @@ def run_experiment(
                         approach,
                         task,
                         decoder,
+                        prompt=prompts[task.task_id],
                         run_index=run_index,
                         seed=seed,
                         max_tokens=max_tokens,

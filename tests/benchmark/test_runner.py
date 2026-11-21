@@ -31,6 +31,7 @@ class FakeDecoder:
         self._output = output
         self._tokens = tokens
         self._finish_reason = finish_reason
+        self.prompts = []
 
     def generate(
         self,
@@ -40,6 +41,7 @@ class FakeDecoder:
         temperature=0.8,
         _metrics=None,
     ):
+        self.prompts.append(prompt)
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
             _metrics["finish_reason"] = self._finish_reason
@@ -210,6 +212,12 @@ def test_run_normal_output_field_contains_raw_generation():
     assert result["output"] == raw
 
 
+def test_run_normal_uses_supplied_prompt():
+    decoder = FakeDecoder('{"name": "Ada", "status": "ok"}')
+    run_normal(TC1, decoder, prompt="CUSTOM", run_index=0, seed=42)
+    assert decoder.prompts == ["CUSTOM"]
+
+
 # ---------------------------------------------------------------------------
 # Multi-output fake decoder for retry tests
 #
@@ -228,6 +236,7 @@ class MultiOutputFakeDecoder:
         self._outputs = iter(outputs)
         self._tokens = tokens_per_attempt
         self._finish_reasons = iter(finish_reasons or ["eos"] * len(outputs))
+        self.prompts = []
 
     def generate(
         self,
@@ -237,6 +246,7 @@ class MultiOutputFakeDecoder:
         temperature=0.8,
         _metrics=None,
     ):
+        self.prompts.append(prompt)
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
             _metrics["finish_reason"] = next(self._finish_reasons)
@@ -358,6 +368,14 @@ def test_run_retry_approach_field_is_retry():
     assert result["approach"] == "retry"
 
 
+def test_run_retry_uses_supplied_prompt_for_every_attempt():
+    decoder = MultiOutputFakeDecoder(
+        ["not json", '{"name": "Ada", "status": "ok"}']
+    )
+    run_retry(TC1, decoder, prompt="CUSTOM", run_index=0, seed=42)
+    assert decoder.prompts == ["CUSTOM", "CUSTOM"]
+
+
 def test_run_retry_constraint_timings_are_always_zero():
     valid = '{"name": "Ada", "status": "ok"}'
     decoder = MultiOutputFakeDecoder([valid])
@@ -426,6 +444,7 @@ class ConstrainedFakeDecoder:
         self._consume_time = consume_time
         self._finish_reason = finish_reason
         self.received_constraint = None
+        self.prompts = []
 
     def generate(
         self,
@@ -436,6 +455,7 @@ class ConstrainedFakeDecoder:
         _metrics=None,
     ):
         self.received_constraint = constraint
+        self.prompts.append(prompt)
         if _metrics is not None:
             _metrics["tokens_generated"] = self._tokens
             _metrics["finish_reason"] = self._finish_reason
@@ -547,3 +567,9 @@ def test_run_constrained_records_run_index_and_seed():
     result = run_constrained(TC1, decoder, run_index=2, seed=77)
     assert result["run_index"] == 2
     assert result["seed"] == 77
+
+
+def test_run_constrained_uses_supplied_prompt():
+    decoder = ConstrainedFakeDecoder('{"name": "Ada", "status": "ok"}')
+    run_constrained(TC1, decoder, prompt="CUSTOM", run_index=0, seed=42)
+    assert decoder.prompts == ["CUSTOM"]
