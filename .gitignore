@@ -6,13 +6,25 @@ dist/
 wheels/
 *.egg-info
 
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
 # Virtual environments
 .venv
 
+# Local/personal files
 AGENTS.md
-.ruff_cache/
 tdd_plan.md
+.DS_Store
+*.log
 
-# Benchmark results (keep the directory, ignore generated outputs)
+# Benchmark results: ignore generated runs, track the published run
 benchmark/results/*
 !benchmark/results/.gitkeep
+!benchmark/results/published/
+!benchmark/results/published/**

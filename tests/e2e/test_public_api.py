@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from typing import ClassVar
 
 import torch
 
@@ -47,7 +48,7 @@ def test_public_generate_accepts_a_pattern_string_without_manual_constraint_setu
 
 
 class JsonTokenizer:
-    token_texts = {
+    token_texts: ClassVar[dict[int, str]] = {
         0: "{",
         1: '"name"',
         2: ":",
@@ -71,7 +72,7 @@ class JsonTokenizer:
 
 
 class JsonModel:
-    token_ids = [0, 1, 2, 3, 4, 5, 2, 6, 4, 7, 2, 8, 9]
+    token_ids: ClassVar[list[int]] = [0, 1, 2, 3, 4, 5, 2, 6, 4, 7, 2, 8, 9]
 
     def __init__(self):
         self.calls = 0

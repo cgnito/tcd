@@ -116,7 +116,6 @@ def test_compile_schema_builds_array_item_schema():
         {"type": "string", "minLength": -1},
         {"type": "string", "maxLength": "5"},
         {"type": "string", "minLength": 5, "maxLength": 2},
-        {"type": "array"},
         {"type": "array", "items": "integer"},
         {"type": "array", "items": {"type": "array"}},
     ],

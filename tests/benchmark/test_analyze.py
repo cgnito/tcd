@@ -56,6 +56,15 @@ def test_latest_observations_uses_latest_filename(tmp_path):
     assert _latest_observations(tmp_path) == newer
 
 
+def test_latest_observations_falls_back_to_published(tmp_path):
+    published = tmp_path / "published"
+    published.mkdir()
+    result = published / "20260101T000000000000Z_observations.jsonl"
+    result.write_text("", encoding="utf-8")
+
+    assert _latest_observations(tmp_path) == result
+
+
 def test_infer_metadata_path_returns_existing_sibling(tmp_path):
     observations = tmp_path / "run_observations.jsonl"
     metadata = tmp_path / "run_metadata.json"

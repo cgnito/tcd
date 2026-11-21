@@ -5,7 +5,6 @@ import sys
 
 from tcd import JSONSchemaConstraint
 
-
 USE_COLOR = sys.stdout.isatty()
 RESET = "\033[0m"
 CYAN = "\033[36m"

@@ -1,7 +1,13 @@
 """Incremental JSON parsing and schema representation."""
 
+from .schema import (
+    ArraySchema,
+    ObjectSchema,
+    PrimitiveSchema,
+    SchemaError,
+    compile_schema,
+)
 from .state import JsonParserState
-from .schema import ArraySchema, ObjectSchema, PrimitiveSchema, SchemaError, compile_schema
 
 __all__ = [
     "ArraySchema",

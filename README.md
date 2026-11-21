@@ -1,108 +1,121 @@
 # TCD — Tiny Constrained Decoder
 
-TCD is a small Python implementation of **token-level constrained generation** for language models. It connects a language model's tokenizer to a constraint engine that determines which tokens are allowed at each generation step.
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
 
-It currently supports two constraint types:
+TCD is a small, from-scratch implementation of **token-level constrained generation** for language models. At each generation step, it masks tokens that would violate a regular expression or JSON Schema, so the model samples only from continuations that are valid at that point.
 
-- **Regex constraints:** Compile regular expressions into finite automata to restrict generated text to a defined pattern.
-- **JSON Schema constraints:** Parse JSON incrementally and enforce a supplied schema during generation.
+TCD is an experimental learning and research project. It is not production-ready, and it does **not** guarantee that every generation will complete successfully.
 
-Rather than generating arbitrary text and validating the result afterward, TCD masks tokens that cannot lead to a valid output before sampling.
+## The problem
 
-## Demonstration
+Language models generate text one token at a time. If an application needs structured output, a common approach is:
 
-![TCD JSON Schema constraint demonstration](demo.png)
+1. generate freely,
+2. validate the result,
+3. retry if validation fails.
 
-*Terminal demonstration of the incremental JSON parser validating candidate inputs against different JSON Schemas.*
+That works, but it wastes generation on outputs that were never going to be usable. TCD takes the constrained-decoding approach instead: the constraint is consulted before sampling, and invalid token choices are removed from the distribution.
 
-The experiment demonstrates how the JSON Schema constraint handles valid and invalid inputs. Valid candidates are accepted, while candidates containing incorrect types, missing required properties, or unexpected properties are rejected when they cannot continue satisfying the schema.
-
-This is a model-free demonstration of the parser and its schema enforcement logic.
+The important qualification is that this is **local** validity. TCD prevents the next token from being invalid given the current state. It does not search ahead, backtrack, or guarantee that a valid completion exists before the token limit is reached.
 
 ## Motivation
 
-I stumbled across [dottxt.ai](https://dottxt.ai/) while looking for website inspiration. I didn't fully understand what the company was building, so I started exploring its work, particularly [Outlines](https://github.com/dottxt-ai/outlines), a library for generating structured outputs from language models.
+I discovered structured generation through [.txt](https://dottxt.ai/) and [Outlines](https://github.com/dottxt-ai/outlines). I wanted to understand how constrained generation actually works rather than only use a library that implements it. That led to building TCD from scratch: tokenizer handling, autoregressive generation, finite automata, incremental JSON parsing, token masking, and the experiment in this repository.
 
-I wanted to understand how constrained generation actually works under the hood rather than simply use a library that handled it for me.
+TCD is intentionally small and readable. The goal is to make the underlying mechanisms inspectable.
 
-That curiosity led me to build TCD from scratch and explore regex parsing, finite automata, incremental JSON parsing, tokenization, and token-level logit masking along the way.
+## How it works
 
-TCD is intentionally small and focused on understanding the relationship between a constraint's state, a language model's tokenizer, and autoregressive generation. It is still under active development.
+```mermaid
+flowchart TD
+    A[Prompt] --> B[Tokenize prompt]
+    B --> C[Model forward pass]
+    C --> D[Logits for next token]
+    D --> E[Ask constraint for valid token IDs]
+    E --> F[Mask all other token logits]
+    F --> G[Softmax and sample]
+    G --> H[Append token]
+    H --> I[Update constraint state]
+    I --> J{Constraint complete or EOS?}
+    J -- yes --> K[Return generated text]
+    J -- no --> L[Model forward on new token with KV cache]
+    L --> D
+```
 
-## Quick Start
+The constraint interface is deliberately narrow:
 
-TCD requires Python 3.13 or newer and uses [uv](https://docs.astral.sh/uv/) for dependency and environment management.
+```python
+bind(tokenizer)
+valid_token_ids()
+consume_token(token_id)
+is_complete()
+```
 
-Clone the repository and install dependencies:
+`valid_token_ids()` is a non-mutating query. `consume_token()` commits the sampled token to the constraint state. This separation is what makes candidate validation possible without corrupting the current parser or automaton state.
+
+## Supported constraints
+
+### Regex
+
+The regex constraint compiles the pattern to a Thompson NFA, converts it to a DFA by subset construction, and checks candidate token text against the DFA.
+
+Supported syntax:
+
+- literals
+- concatenation
+- alternation with `|`
+- grouping with parentheses
+- Kleene star with `*`
+
+Examples:
+
+```text
+red|blue|green
+a(b|c)
+ab*
+```
+
+Not supported: character classes, `+`, `?`, anchors, and escape sequences.
+
+### JSON Schema
+
+The JSON Schema constraint compiles a supported subset of JSON Schema into internal schema nodes, then parses the generated document incrementally. It tracks structural state, schema state, property names, required properties, and completed values.
+
+Supported features:
+
+| Feature | Support |
+|---|---|
+| Primitive types | `string`, `integer`, `boolean`, `null` |
+| Objects | `properties`, `required`, `additionalProperties` |
+| Arrays | one `items` schema |
+| Nesting | nested objects and arrays |
+| Enumerations | primitive `enum` values |
+| Integers | `minimum`, `maximum` |
+| Strings | `minLength`, `maxLength` |
+
+Not supported: floating-point numbers, `number`, `oneOf`/`anyOf`/`allOf`, `pattern`, tuples, and other JSON Schema keywords outside the table above.
+
+## Quick start
+
+TCD requires Python 3.13 or newer and uses [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/cgnito/tcd.git
 cd tcd
-
 uv sync
 ```
 
-Run the test suite:
+Run the tests:
 
 ```bash
 ./scripts/test.sh
 ```
 
-The tests use fake models and tokenizers, so they do not require downloading the actual language model.
+The tests use fake models and tokenizers, so they do not download a language model.
 
-Run the model-free JSON Schema demonstration:
-
-```bash
-uv run python examples/demo.py
-```
-
-Run the basic generation example:
-
-```bash
-uv run python examples/basic.py
-```
-
-The decoder uses `Qwen/Qwen2.5-0.5B-Instruct` by default. Initializing `Decoder()` loads the model and tokenizer, which Transformers may download from Hugging Face on the first run.
-
-## Usage
-
-TCD exposes a common constraint interface through which different constraint implementations can be passed to the decoder.
-
-### Regex Constraints
-
-Regex constraints allow generated text to follow a specified regular expression.
-
-```python
-from tcd import Decoder, RegexConstraint
-
-decoder = Decoder()
-
-response = decoder.generate(
-    prompt="Is Python a programming language?",
-    constraint=RegexConstraint("yes|no"),
-    max_tokens=10,
-    temperature=0.8,
-)
-
-print(response)
-```
-
-The current supported regex subset includes:
-
-- Literals.
-- Concatenation.
-- Alternation using `|`.
-- Grouping using parentheses.
-- Kleene star repetition using `*`.
-
-For example:
-
-- `"red|blue|green"` allows one of three alternatives.
-- `"a(b|c)"` allows either `ab` or `ac`.
-
-### JSON Schema Constraints
-
-JSON Schema constraints allow generated output to follow a predefined JSON structure.
+## Minimal example
 
 ```python
 from tcd import Decoder, JSONSchemaConstraint
@@ -119,157 +132,141 @@ schema = {
 }
 
 decoder = Decoder()
-
 response = decoder.generate(
     prompt="Generate a user profile.",
     constraint=JSONSchemaConstraint(schema),
+    max_tokens=100,
+    temperature=0.8,
 )
 
 print(response)
 ```
 
-The current supported schema features include:
+`Decoder()` loads `Qwen/Qwen2.5-0.5B-Instruct` by default. Transformers may download the model on first use.
 
-- **Primitive types:** `string`, `integer`, `boolean`, and `null`.
-- **Objects:** `properties`, `required`, and `additionalProperties`.
-- **Arrays:** A single `items` schema.
-- **Nested structures:** Nested objects and arrays.
-- **Enumerations:** Primitive `enum` values.
-- **Integer validation:** `minimum` and `maximum`.
-- **String validation:** `minLength` and `maxLength`.
+Regex constraints use the same decoder API:
 
-The JSON parser maintains its state as tokens are generated, checking the evolving JSON structure against the compiled schema.
+```python
+from tcd import Decoder
 
-This allows invalid continuations to be excluded during generation instead of relying on post-generation validation.
+decoder = Decoder()
+response = decoder.generate(
+    prompt="Is Python a programming language?",
+    constraint="yes|no",
+    max_tokens=10,
+    temperature=0.8,
+)
+print(response)
+```
 
-### Running the Experiments
+A string constraint is automatically converted to a `RegexConstraint`.
 
-The examples directory contains two complementary demonstrations:
+## Examples
 
 ```bash
-# Model-free JSON Schema parser experiments
+# Model-free JSON Schema parser demonstration
 uv run python examples/demo.py
 
-# Actual decoder usage with regex and JSON Schema constraints
+# Interactive regex generation example
+uv run python examples/basic.py
+
+# Full decoder examples with JSON Schema and regex constraints
 uv run python examples/experiments.py
 ```
 
-The first demonstrates schema enforcement independently of a language model. The second demonstrates how developers can integrate the constraint implementations with the decoder through TCD's public API.
+`examples/demo.py` does not load a model. The other two examples download and run Qwen on CPU.
 
-## How It Works
+## Tests
 
-Both constraint implementations follow the same internal protocol:
-
-```python
-bind(tokenizer)
-valid_token_ids()
-consume_token(token_id)
-is_complete()
+```bash
+./scripts/test.sh
 ```
 
-This gives the decoder a consistent interface for interacting with different constraint implementations without depending on their internal parsing or validation logic.
+or directly:
 
-The generation process follows this flow:
-
-```text
-             Constraint State
-                    |
-                    v
-             Valid Token IDs
-                    |
-                    v
-               Logit Masking
-                    |
-                    v
-               Token Sampling
-                    |
-                    v
-             State Transition
-                    |
-                    v
-             Completion Check
-                    |
-              Continue / Stop
+```bash
+uv run pytest -q
 ```
 
-At each generation step, the constraint determines which token IDs are valid. The decoder masks the logits of disallowed tokens before sampling, ensuring that generation follows the active constraint.
+The suite covers the regex parser and DFA, the incremental JSON parser and schema compiler, constraint adapters, decoder integration, the public API, and the benchmark pipeline.
 
-The two constraint implementations handle this differently:
+## Benchmark
 
-- **Regex:** Regular expressions are parsed into an NFA and converted into a DFA. The DFA tracks the current state and determines which token continuations are valid.
-- **JSON Schema:** The schema is compiled into an internal representation. An incremental JSON parser uses a stack of structural contexts and schema information to track and validate the evolving output.
+TCD includes an exploratory benchmark comparing three approaches on five JSON-generation tasks:
 
-`TokenIndex` provides a shared decoded-vocabulary cache and candidate index. It decodes the vocabulary once and groups tokens by their first character to reduce repeated token lookups during generation.
+1. **Normal prompting:** generate once, validate afterward.
+2. **Retry:** generate, validate, and retry up to three times.
+3. **Constrained decoding:** generate with a `JSONSchemaConstraint`.
 
+The published run uses `Qwen/Qwen2.5-0.5B-Instruct` with chat-template prompting, 5 runs per task, 100 maximum tokens, temperature `0.8`, and seeds derived from a fixed base. There are 25 observations per approach.
 
-```mermaid
-flowchart TD
-    A[prompt] --> B[tokenize full prompt]
-    B --> C[model forward pass on full prompt]
-    C --> D{step loop}
-    D --> E[get next_logits from last position]
-    E --> F[constraint.valid_token_ids]
-    F --> G["build -inf mask\nexcept allowed IDs"]
-    G --> H[apply mask to logits]
-    H --> I[temperature scale + softmax]
-    I --> J[torch.multinomial sample]
-    J --> K[constraint.consume_token]
-    K --> L{is_complete or max_tokens?}
-    L -- yes --> M[return response string]
-    L -- no --> N["model forward on new token\nwith KV cache"]
-    N --> D
+Primary results use strict validation: `json.loads` must parse the output exactly as generated. Markdown fences are therefore invalid.
+
+| Approach | Strict schema-valid | Fence-stripped valid | Mean latency | Tokens/s |
+|---|---:|---:|---:|---:|
+| Normal | 7/25 | 23/25 | 9.21s | 3.90 |
+| Retry | 10/25 | 24/25 | 25.12s | 4.45 |
+| Constrained | 19/25 | 19/25 | 27.86s | 1.53 |
+
+The fence-stripped column is a **post-hoc sensitivity analysis**, not a replacement for the primary results. Almost all unconstrained failures were valid JSON wrapped in Markdown fences. Once those fences are removed, normal and retry prompting are more schema-valid than constrained decoding in this run.
+
+All six constrained failures were truncations at the 100-token limit; every constrained output that reached `constraint_complete` was schema-valid. The benchmark is exploratory: 25 observations per approach are enough to illustrate behaviour, not to establish statistical significance.
+
+Reproduce the experiment:
+
+```bash
+uv run python -m benchmark.run_benchmark
+uv run python -m benchmark.analyze
 ```
 
+The published run is in [`benchmark/results/published/`](benchmark/results/published/). The JSONL contains one observation per line; the metadata records the model, environment, generation settings, prompts, rendered chat prompts, and schemas.
 
-## Project Structure
+See [`docs/benchmarking.md`](docs/benchmarking.md) for the full methodology, per-task results, failure analysis, and threats to validity.
+
+## Current limitations
+
+- Constraint checks are local. TCD can enter a state with no valid next token and raise an error; it does not backtrack.
+- Generation can still hit `max_tokens` before a constrained document is complete.
+- The regex engine supports only a small subset of regular expressions.
+- The JSON Schema implementation supports only a small subset of JSON Schema.
+- Token candidates are decoded individually. Context-sensitive or byte-level tokenizer behaviour may not be handled perfectly.
+- The decoder runs on CPU with Hugging Face Transformers and is not a production inference backend.
+- Streaming generation is not implemented.
+- The benchmark uses one model, one hardware environment, and a small sample.
+
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md): decoder, tokenizer, constraint protocol, regex automata, and incremental JSON parsing.
+- [`docs/benchmarking.md`](docs/benchmarking.md): experiment design, metrics, published results, failure analysis, and limitations.
+- [`docs/design-decisions.md`](docs/design-decisions.md): parser cloning, performance optimisations, EOS handling, and special-token exclusion.
+
+## Project structure
 
 ```text
 src/tcd/
-├── __init__.py
-│   └── Public package exports.
-│
-├── decoder.py
-│   └── Model execution, sampling, and logit masking.
-│
-├── regex/
-│   ├── __init__.py
-│   │   └── Regex automata exports.
-│   └── state.py
-│       └── Regex parsing, NFA construction, and DFA construction.
-│
+├── decoder.py                 # Model execution, sampling, logit masking
 ├── constraints/
-│   ├── __init__.py
-│   │   └── Public constraint adapter exports.
-│   ├── protocol.py
-│   │   └── Internal constraint interface used by the decoder.
-│   ├── regex.py
-│   │   └── RegexConstraint implementation.
-│   ├── json_schema.py
-│   │   └── JSONSchemaConstraint implementation.
-│   └── token_index.py
-│       └── Shared vocabulary cache and candidate index.
-│
+│   ├── protocol.py            # Constraint interface
+│   ├── regex.py               # Regex constraint adapter
+│   ├── json_schema.py         # JSON Schema constraint adapter
+│   └── token_index.py         # Vocabulary cache and candidate index
+├── regex/
+│   └── state.py               # Regex parser, NFA, and DFA
 └── json_parser/
-    ├── __init__.py
-    │   └── JSON parser and schema exports.
-    ├── state.py
-    │   └── Incremental JSON parser and structural state.
-    └── schema.py
-        └── Supported JSON Schema nodes and compiler.
+    ├── schema.py              # Supported JSON Schema compiler
+    └── state.py               # Incremental JSON parser
+
+benchmark/
+├── dataset.py                 # Five benchmark tasks
+├── runner.py                  # Three benchmark approaches
+├── run_benchmark.py           # Experiment entry point
+├── analyze.py                 # Aggregation and failure analysis
+└── results/published/         # Published raw run
+
+docs/                          # Technical documentation
+examples/                      # Model-free and decoder examples
+tests/                         # Unit, integration, e2e, and benchmark tests
 ```
-
-## Current Limitations
-
-TCD is an experimental implementation, not a complete JSON Schema or regex engine.
-
-Current limitations include:
-
-- Only a subset of JSON Schema keywords and types is supported.
-- The regex implementation supports a limited set of regular expression constructs.
-- Tokenizer integration currently decodes individual token IDs and may not handle every byte-level or context-sensitive tokenizer behavior.
-- Streaming generation and a production-ready inference backend are not yet implemented.
-
-The project is still evolving, and these limitations represent areas for further development.
 
 ## Contributing
 
@@ -277,18 +274,12 @@ Contributions that improve correctness, clarity, testing, or measured performanc
 
 Before opening a change:
 
-1. Keep behavior focused on the currently supported constraint subset.
-2. Add or update tests under `tests/unit/`, `tests/integration/`, or `tests/e2e/` as appropriate.
-3. Run the full test suite:
+1. Keep behaviour within the supported constraint subsets.
+2. Add or update tests under `tests/unit/`, `tests/integration/`, `tests/e2e/`, or `tests/benchmark/`.
+3. Run `./scripts/test.sh`.
+4. Run `uv run ruff check .`.
+5. Explain behavioural changes and performance claims with reproducible examples or measurements.
 
-   ```bash
-   ./scripts/test.sh
-   ```
+## License
 
-4. Explain behavioral changes and performance claims with reproducible examples or measurements.
-
-## Notes
-
-The [`notes/`](notes/) directory contains my working explanations and learning notes as I build the project.
-
-For a quick overview of how constraints interact with the decoder, see [`notes/constraint-flow.md`](notes/constraint-flow.md).
+MIT. See [`LICENSE`](LICENSE).

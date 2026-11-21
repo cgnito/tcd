@@ -1,0 +1,174 @@
+{
+  "run_id": "20261121T113832270267Z",
+  "timestamp_utc": "2026-11-21T11:38:32.270335+00:00",
+  "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+  "chat_template": true,
+  "generation": {
+    "runs_per_task": 5,
+    "max_tokens": 100,
+    "temperature": 0.8,
+    "max_retries": 3,
+    "seed_base": 0,
+    "seed_spacing": 100
+  },
+  "tasks": [
+    {
+      "task_id": "TC-1",
+      "description": "Flat object with two string fields. Establishes the baseline: minimal schema, shortest output, fewest ways for unconstrained generation to fail.",
+      "prompt": "Generate a JSON object with exactly two fields: name, which is a string, and status, which is a string. Respond with only the JSON object and nothing else.",
+      "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nGenerate a JSON object with exactly two fields: name, which is a string, and status, which is a string. Respond with only the JSON object and nothing else.<|im_end|>\n<|im_start|>assistant\n",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "task_id": "TC-2",
+      "description": "Flat object with three fields spanning all three basic primitive types: string, integer, and boolean. Tests whether unconstrained generation can maintain type discipline across a small mixed-type object.",
+      "prompt": "Generate a JSON object for a user record with exactly three fields: username, which is a string; score, which is a non-negative integer; and active, which is a boolean. Respond with only the JSON object and nothing else.",
+      "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nGenerate a JSON object for a user record with exactly three fields: username, which is a string; score, which is a non-negative integer; and active, which is a boolean. Respond with only the JSON object and nothing else.<|im_end|>\n<|im_start|>assistant\n",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "username",
+          "score",
+          "active"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "task_id": "TC-3",
+      "description": "Flat object with four required fields including two bounded integers. Tests whether unconstrained generation respects numeric constraints described only in prose, and whether TCD overhead scales with the number of required fields.",
+      "prompt": "Generate a JSON object for a book record with exactly four fields: title, which is a string; year, which is an integer between 1900 and 2100; rating, which is an integer between 1 and 10; and available, which is a boolean. Respond with only the JSON object and nothing else.",
+      "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nGenerate a JSON object for a book record with exactly four fields: title, which is a string; year, which is an integer between 1900 and 2100; rating, which is an integer between 1 and 10; and available, which is a boolean. Respond with only the JSON object and nothing else.<|im_end|>\n<|im_start|>assistant\n",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer",
+            "minimum": 1900,
+            "maximum": 2100
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title",
+          "year",
+          "rating",
+          "available"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "task_id": "TC-4",
+      "description": "Nested object: an outer object containing an inner object and a string field. Tests TCD parser stack depth and whether unconstrained generation can correctly close both the inner and outer objects.",
+      "prompt": "Generate a JSON object with exactly two fields: user, which is itself an object containing id as a positive integer and name as a string; and message, which is a string. Respond with only the JSON object and nothing else.",
+      "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nGenerate a JSON object with exactly two fields: user, which is itself an object containing id as a positive integer and name as a string; and message, which is a string. Respond with only the JSON object and nothing else.<|im_end|>\n<|im_start|>assistant\n",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "task_id": "TC-5",
+      "description": "Array of objects: each element is an object with an integer and a string field. Tests TCD array handling and produces the longest outputs in the dataset. Unconstrained generation must balance correct array syntax, correct object structure, and correct closing brackets.",
+      "prompt": "Generate a JSON array containing two or three elements. Each element must be an object with exactly two fields: id, which is a positive integer, and tag, which is a string. Respond with only the JSON array and nothing else.",
+      "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nGenerate a JSON array containing two or three elements. Each element must be an object with exactly two fields: id, which is a positive integer, and tag, which is a string. Respond with only the JSON array and nothing else.<|im_end|>\n<|im_start|>assistant\n",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tag": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "tag"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "environment": {
+    "python_version": "3.13.14",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "processor": "",
+    "cpu_model": "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz",
+    "cpu_count": 8,
+    "total_ram_bytes": 8251899904,
+    "torch_version": "2.14.0+cpu",
+    "transformers_version": "5.17.0",
+    "jsonschema_version": "4.26.0",
+    "tcd_version": "0.1.0"
+  }
+}

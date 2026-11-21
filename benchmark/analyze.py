@@ -34,8 +34,15 @@ _FENCED_OUTPUT = re.compile(
 
 
 def _latest_observations(results_dir: Path = RESULTS_DIR) -> Path:
-    """Return the most recent observations file by run-id filename."""
-    paths = sorted(Path(results_dir).glob("*_observations.jsonl"))
+    """Return the most recent observations file by run-id filename.
+
+    New runs are written directly under ``results/``. If none exist, fall back
+    to the tracked published run so the analyzer works from a fresh clone.
+    """
+    results_dir = Path(results_dir)
+    paths = sorted(results_dir.glob("*_observations.jsonl"))
+    if not paths:
+        paths = sorted((results_dir / "published").glob("*_observations.jsonl"))
     if not paths:
         raise FileNotFoundError(f"no observations found in {results_dir}")
     return paths[-1]
