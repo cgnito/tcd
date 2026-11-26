@@ -30,27 +30,16 @@ TCD is intentionally small and readable. The goal is to make the underlying mech
 
 ```mermaid
 flowchart TD
-    subgraph input["1 · Input processing"]
-        A(["Prompt"]) --> B["Tokenize prompt"] --> C["Model forward pass"]
-    end
-
-    subgraph generation["2 · Constrained generation (repeats per token)"]
-        D["Logits for next token"] --> E["Constraint returns valid token IDs"]
-        E --> F["Mask invalid logits"]
-        F --> G["Softmax and sample"]
-        G --> H["Append token"]
-        H --> I["Update constraint state"]
-        I --> J{"Constraint complete<br/>or EOS?"}
-        J -- "no" --> K["Forward pass on new token<br/>with KV cache"]
-        K --> D
-    end
-
-    subgraph completion["3 · Completion"]
-        L(["Return generated text"])
-    end
-
-    C --> D
-    J -- "yes" --> L
+    A([Prompt]) --> B[Tokenize and run model]
+    B --> C[Logits for next token]
+    C --> D[Constraint: valid token IDs]
+    D --> E[Mask invalid logits]
+    E --> F[Sample token]
+    F --> G[Append and advance state]
+    G --> H{Complete or EOS?}
+    H -- no --> I[Forward pass<br/>using KV cache]
+    I --> C
+    H -- yes --> J([Return generated text])
 ```
 
 The constraint interface is deliberately narrow:
