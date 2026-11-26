@@ -29,34 +29,28 @@ TCD is intentionally small and readable. The goal is to make the underlying mech
 ## How it works
 
 ```mermaid
-flowchart LR
-    subgraph input["Input processing"]
-        A["Prompt"]
-        B["Tokenize prompt"]
-        C["Model forward pass<br/>on prompt"]
-        A --> B --> C
+flowchart TD
+    subgraph input["1 · Input processing"]
+        A(["Prompt"]) --> B["Tokenize prompt"] --> C["Model forward pass"]
     end
 
-    subgraph generation["Constrained generation"]
-        D["Logits for next token"]
-        E["Ask constraint for<br/>valid token IDs"]
-        F["Mask invalid<br/>token logits"]
-        G["Softmax and sample"]
-        H["Append token"]
-        I["Update constraint state"]
-        J{"Constraint complete<br/>or EOS?"}
-        L["Model forward pass<br/>on new token<br/>with KV cache"]
-        D --> E --> F --> G --> H --> I --> J
-        J -- "no" --> L
-        L --> D
+    subgraph generation["2 · Constrained generation (repeats per token)"]
+        D["Logits for next token"] --> E["Constraint returns valid token IDs"]
+        E --> F["Mask invalid logits"]
+        F --> G["Softmax and sample"]
+        G --> H["Append token"]
+        H --> I["Update constraint state"]
+        I --> J{"Constraint complete<br/>or EOS?"}
+        J -- "no" --> K["Forward pass on new token<br/>with KV cache"]
+        K --> D
     end
 
-    subgraph completion["Completion"]
-        K["Return generated text"]
+    subgraph completion["3 · Completion"]
+        L(["Return generated text"])
     end
 
     C --> D
-    J -- "yes" --> K
+    J -- "yes" --> L
 ```
 
 The constraint interface is deliberately narrow:
