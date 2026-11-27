@@ -28,19 +28,12 @@ TCD is intentionally small and readable. The goal is to make the underlying mech
 
 ## How it works
 
-```mermaid
-flowchart TD
-    A([Prompt]) --> B[Tokenize and run model]
-    B --> C[Logits for next token]
-    C --> D[Constraint: valid token IDs]
-    D --> E[Mask invalid logits]
-    E --> F[Sample token]
-    F --> G[Append and advance state]
-    G --> H{Complete or EOS?}
-    H -- no --> I[Forward pass<br/>using KV cache]
-    I --> C
-    H -- yes --> J([Return generated text])
-```
+<!-- Rendered from docs/how-it-works.mmd to assets/how-it-works{,-dark}.png -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/how-it-works-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./assets/how-it-works.png">
+  <img alt="How TCD works: the prompt is tokenized and run through the model; the constraint supplies valid token IDs, invalid logits are masked, a token is sampled and committed; the model then runs again with the KV cache until the constraint completes or the token limit is reached." src="./assets/how-it-works.png">
+</picture>
 
 The constraint interface is deliberately narrow:
 

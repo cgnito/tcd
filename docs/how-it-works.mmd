@@ -1,0 +1,10 @@
+flowchart LR
+    A([Prompt]) --> B[Tokenize and<br/>run model]
+    B --> C[Next-token<br/>logits]
+    C --> D[Constraint:<br/>valid token IDs]
+    D --> E[Mask logits<br/>and sample]
+    E --> F[Append and<br/>advance state]
+    F --> G{Complete<br/>or EOS?}
+    G -- no --> H[Forward pass<br/>with KV cache]
+    H --> C
+    G -- yes --> I([Return text])
